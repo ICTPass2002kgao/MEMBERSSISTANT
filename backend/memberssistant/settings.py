@@ -8,6 +8,7 @@ import os
 import json
 from pathlib import Path
 from dotenv import load_dotenv
+import dj_database_url
 
 import firebase_admin
 from firebase_admin import credentials 
@@ -72,15 +73,12 @@ TEMPLATES = [
 WSGI_APPLICATION = 'memberssistant.wsgi.application'
 
 # Database
-# Note: For production, you will likely replace this with 'dj-database-url' to connect to PostgreSQL
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-        'OPTIONS': {
-            'timeout': 20,  # Wait up to 20 seconds for the DB lock to release
-        }
-    }
+    'default': dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 # Password validation
