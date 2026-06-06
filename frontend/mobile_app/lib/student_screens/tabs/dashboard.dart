@@ -1,0 +1,1076 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:barcode_widget/barcode_widget.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+class Dashboard extends StatefulWidget {
+  final Map<String, dynamic> userData;
+  final String name;
+  final String studentNo;
+  final String initials;
+  final bool isCleared;
+  final String accommodationName;
+  final String roomNumber;
+  final String blockName;
+  final String unitName; 
+  final Function(int) onNavigate;
+  final VoidCallback onLogout;
+
+  const Dashboard({
+    super.key,
+    required this.userData,
+    required this.name,
+    required this.studentNo,
+    required this.initials,
+    required this.isCleared,
+    required this.accommodationName,
+    required this.roomNumber,
+    required this.blockName,
+    required this.unitName, 
+    required this.onNavigate,
+    required this.onLogout,
+  });
+
+  @override
+  State<Dashboard> createState() => _DashboardState();
+}
+
+class _DashboardState extends State<Dashboard> {
+  int _selectedTab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+
+    return Column(
+      children: [
+        // --- CUSTOM TOP TAB BAR ---
+        Container(
+          margin: const EdgeInsets.only(left: 24, right: 24, top: 16),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: primaryColor.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildTabButton(
+                  title: "My Details",
+                  index: 0,
+                  primaryColor: primaryColor,
+                ),
+              ),
+              Expanded(
+                child: _buildTabButton(
+                  title: "Student Card",
+                  index: 1,
+                  primaryColor: primaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // --- TAB CONTENT ---
+        Expanded(
+          child: _selectedTab == 0
+              ? _buildMyDetails(context)
+              : _buildStudentCardView(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabButton({
+    required String title,
+    required int index,
+    required Color primaryColor,
+  }) {
+    final isSelected = _selectedTab == index;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedTab = index;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : [],
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? Colors.white : primaryColor.withOpacity(0.5),
+            fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // MY DETAILS TAB
+  // ===========================================================================
+  Widget _buildMyDetails(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+    final slateColor = theme.colorScheme.onSecondary;
+    final textColor = theme.colorScheme.onSurface;
+
+    final String? faceUrl = widget.userData['face_url'];
+    final String? accommodationLogoUrl =
+        widget.userData['accommodation_logo_url'];
+
+    // Logic to determine if we should show the Unit block
+    final bool hasUnit =
+        widget.unitName != "Unassigned Unit" && widget.unitName.isNotEmpty;
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // --- HEADER ---
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Good day,',
+                      style: TextStyle(
+                        color: slateColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.name,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: textColor,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (context) => StudentProfileScreen(
+                          userData: widget.userData,
+                          onLogout: widget.onLogout,
+                          initials: widget.initials,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: primaryColor.withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      radius: 24,
+                      backgroundColor: primaryColor.withOpacity(0.15),
+                      backgroundImage: faceUrl != null && faceUrl.isNotEmpty
+                          ? NetworkImage(faceUrl)
+                          : null,
+                      child: faceUrl == null || faceUrl.isEmpty
+                          ? Text(
+                              widget.initials.toUpperCase(),
+                              style: TextStyle(
+                                color: primaryColor,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 18,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+
+            // --- HERO CLEARANCE CARD ---
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: primaryColor.withOpacity(0.03),
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(color: primaryColor.withOpacity(0.15)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildTag("ID: ${widget.studentNo}", primaryColor),
+                      Icon(
+                        CupertinoIcons.shield_lefthalf_fill,
+                        color: primaryColor.withOpacity(0.3),
+                        size: 24,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Gate Clearance Status',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: slateColor,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: widget.isCleared
+                              ? Colors.green.withOpacity(0.15)
+                              : Colors.red.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: widget.isCleared
+                                ? Colors.green.withOpacity(0.3)
+                                : Colors.red.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Icon(
+                          widget.isCleared
+                              ? CupertinoIcons.checkmark_alt
+                              : CupertinoIcons.clear,
+                          color: widget.isCleared
+                              ? Colors.green.shade400
+                              : Colors.red.shade400,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        widget.isCleared ? 'GRANTED' : 'REVOKED',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          color: widget.isCleared
+                              ? Colors.green.shade400
+                              : Colors.red.shade400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // --- PREMIUM RESIDENCE DETAILS CARD ---
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: textColor.withOpacity(0.02),
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(color: primaryColor.withOpacity(0.05)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: primaryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          clipBehavior: Clip.hardEdge,
+                          child:
+                              accommodationLogoUrl != null &&
+                                  accommodationLogoUrl.isNotEmpty
+                              ? Image.network(
+                                  accommodationLogoUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Icon(
+                                        CupertinoIcons.house_alt_fill,
+                                        color: primaryColor,
+                                        size: 22,
+                                      ),
+                                )
+                              : Icon(
+                                  CupertinoIcons.house_alt_fill,
+                                  color: primaryColor,
+                                  size: 22,
+                                ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "REGISTERED ACCOMMODATION",
+                                style: TextStyle(
+                                  color: slateColor,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                widget.accommodationName.toUpperCase(),
+                                style: TextStyle(
+                                  color: textColor,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: primaryColor.withOpacity(0.05),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: 16.0,
+                      right: 16.0,
+                      top: 20.0,
+                      bottom: 20.0,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildResidentInfoTile(
+                            "BLOCK",
+                            widget.blockName,
+                            primaryColor,
+                            slateColor,
+                            textColor,
+                          ),
+                        ),
+                        if (hasUnit) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildResidentInfoTile(
+                              "UNIT",
+                              widget.unitName,
+                              primaryColor,
+                              slateColor,
+                              textColor,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildResidentInfoTile(
+                            "ROOM",
+                            widget.roomNumber,
+                            primaryColor,
+                            slateColor,
+                            textColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 40),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // STUDENT CARD TAB
+  // ===========================================================================
+  Widget _buildStudentCardView(BuildContext context) {
+    final String? faceUrl = widget.userData['face_url'];
+    final String email = "${widget.studentNo}@edu.vut.ac.za";
+    final String course = "N DIP: INFORMATION TECHNOLOGY";
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Center(
+              child: Container(
+                alignment: Alignment.center,
+                width: double.infinity,
+                height: 230,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    tileMode: TileMode.mirror,
+                    colors: [
+                      Color(0xFF1E2A40),
+                      Color.fromARGB(255, 176, 136, 26),
+                    ],
+                    stops: [0.4, 1.3],
+                    transform: GradientRotation(0.3),
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Opacity(
+                        opacity: 0.05,
+                        child: Image.network(
+                          'https://www.transparenttextures.com/patterns/scratched-surface.png',
+                          repeat: ImageRepeat.repeat,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const SizedBox(),
+                        ),
+                      ),
+                    ),
+
+                    Padding(
+                      padding: const EdgeInsets.all(10.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Image.asset(
+                                'assets/vut_logo.PNG',
+                                height: 80,
+                                fit: BoxFit.contain,
+                                alignment: Alignment.topLeft,
+                              ),
+                              Text(
+                                'maVuti',
+                                style: TextStyle(
+                                  fontFamily: 'Trebuchet',
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.5,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Spacer(),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.name.toUpperCase(),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      course,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 7.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      email,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      height: 32,
+                                      width: 180,
+                                      color: Colors.white.withOpacity(0.8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 2,
+                                      ),
+                                      child: BarcodeWidget(
+                                        barcode: Barcode.code128(),
+                                        data: widget.studentNo,
+                                        drawText: false,
+                                        color: Colors.black,
+                                        backgroundColor: Colors.transparent,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                width: 100,
+                                height: 125,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.5),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: faceUrl != null && faceUrl.isNotEmpty
+                                    ? Image.network(
+                                        faceUrl,
+                                        height: 200,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Container(
+                                        color: Colors.grey.shade300,
+                                        child: const Icon(
+                                          CupertinoIcons.person_fill,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              "Digital Student Card",
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // HELPER WIDGETS
+  // ===========================================================================
+  Widget _buildResidentInfoTile(
+    String label,
+    String value,
+    Color primary,
+    Color slate,
+    Color text,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 4.0),
+      decoration: BoxDecoration(
+        color: primary.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: primary.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: slate,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.0,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              color: text,
+              fontSize: 16, 
+              fontWeight: FontWeight.w900,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTag(String text, Color primary) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: primary.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: primary.withOpacity(0.2)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          color: primary,
+          letterSpacing: 1.5,
+        ),
+      ),
+    );
+  }
+}
+
+class StudentProfileScreen extends StatelessWidget {
+  final Map<String, dynamic> userData;
+  final VoidCallback onLogout;
+  final String initials;
+
+  const StudentProfileScreen({
+    super.key,
+    required this.userData,
+    required this.onLogout,
+    required this.initials,
+  });
+
+  Future<void> _resetPassword(BuildContext context, String email) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+
+      if (!context.mounted) return;
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Password reset email sent to $email"),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Failed to send reset email. Please try again."),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+    final slateColor = theme.colorScheme.onSecondary;
+    final textColor = theme.colorScheme.onSurface;
+
+    final String name = "${userData['name'] ?? ''} ${userData['surname'] ?? ''}"
+        .trim();
+    final String email = userData['email'] ?? 'No email provided';
+
+    final bool hasUnit =
+        userData['unit_name'] != null &&
+        userData['unit_name'] != "Unassigned Unit";
+
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: Icon(CupertinoIcons.back, color: textColor),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          "MY PROFILE",
+          style: TextStyle(
+            color: primaryColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2.0,
+          ),
+        ),
+      ),
+      body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.only(left: 24, right: 24, bottom: 60),
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            // Avatar Header
+            Center(
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: primaryColor.withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      radius: 48,
+                      backgroundColor: primaryColor.withOpacity(0.15),
+                      backgroundImage: userData['face_url'] != null
+                          ? NetworkImage(userData['face_url'])
+                          : null,
+                      child: userData['face_url'] == null
+                          ? Text(
+                              initials.toUpperCase(),
+                              style: TextStyle(
+                                color: primaryColor,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 36,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    userData['student_number'] ?? 'Unknown ID',
+                    style: TextStyle(
+                      color: slateColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 40),
+
+            // Information Block
+            _buildSectionHeader("PERSONAL INFORMATION", primaryColor),
+            _buildInfoCard([
+              _buildInfoRow(
+                CupertinoIcons.mail_solid,
+                "Email Address",
+                email,
+                textColor,
+                slateColor,
+              ),
+              _buildDivider(primaryColor),
+              _buildInfoRow(
+                CupertinoIcons.phone_fill,
+                "Phone Number",
+                userData['phone'] ?? 'N/A',
+                textColor,
+                slateColor,
+              ),
+            ], primaryColor),
+
+            const SizedBox(height: 24),
+
+            _buildSectionHeader("ACCOMMODATION DETAILS", primaryColor),
+            _buildInfoCard([
+              _buildInfoRow(
+                CupertinoIcons.building_2_fill,
+                "Property",
+                userData['accommodation_name'] ?? 'Unassigned',
+                textColor,
+                slateColor,
+              ),
+              _buildDivider(primaryColor),
+              _buildInfoRow(
+                CupertinoIcons.square_grid_2x2_fill,
+                "Block",
+                userData['block_name'] ?? 'Unassigned',
+                textColor,
+                slateColor,
+              ),
+              _buildDivider(primaryColor),
+              if (hasUnit) ...[
+                _buildInfoRow(
+                  CupertinoIcons.layers_fill,
+                  "Unit",
+                  userData['unit_name'],
+                  textColor,
+                  slateColor,
+                ),
+                _buildDivider(primaryColor),
+              ],
+              _buildInfoRow(
+                CupertinoIcons.bed_double_fill,
+                "Room Number",
+                userData['room_number_only'] ?? 'Unassigned',
+                textColor,
+                slateColor,
+              ),
+            ], primaryColor),
+
+            const SizedBox(height: 32),
+
+            _buildSectionHeader("SETTINGS & LEGAL", primaryColor),
+            _buildInfoCard([
+              _buildActionRow(
+                CupertinoIcons.lock_shield_fill,
+                "Reset Password",
+                "Send reset link to email",
+                textColor,
+                slateColor,
+                () {
+                  _resetPassword(context, email);
+                },
+              ),
+            ], primaryColor),
+
+            const SizedBox(height: 32),
+
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  onLogout();
+                },
+                icon: const Icon(CupertinoIcons.square_arrow_right),
+                label: const Text(
+                  'SIGN OUT SECURELY',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.withOpacity(0.1),
+                  foregroundColor: Colors.redAccent,
+                  elevation: 0,
+                  side: BorderSide(color: Colors.red.withOpacity(0.3)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, Color primaryColor) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, bottom: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            color: primaryColor,
+            letterSpacing: 1.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(List<Widget> children, Color primary) {
+    return Container(
+      decoration: BoxDecoration(
+        color: primary.withOpacity(0.02),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: primary.withOpacity(0.1)),
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  Widget _buildInfoRow(
+    IconData icon,
+    String label,
+    String value,
+    Color textColor,
+    Color slateColor,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          Icon(icon, color: slateColor.withOpacity(0.5), size: 22),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: slateColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionRow(
+    IconData icon,
+    String title,
+    String subtitle,
+    Color textColor,
+    Color slateColor,
+    VoidCallback onTap,
+  ) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: textColor.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: textColor, size: 20),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: slateColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              CupertinoIcons.chevron_right,
+              color: slateColor.withOpacity(0.5),
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDivider(Color primary) {
+    return Divider(
+      height: 1,
+      thickness: 1,
+      color: primary.withOpacity(0.05),
+      indent: 56,
+    );
+  }
+}
