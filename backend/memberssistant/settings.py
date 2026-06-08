@@ -72,15 +72,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'memberssistant.wsgi.application'
 
-DB_URL = os.environ.get('DATABASE_URL', '').strip()
-
-# If it's totally missing or blank, use the local SQLite fallback
-if not DB_URL:
-    DB_URL = f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
-
+# Database
 DATABASES = {
-    'default': dj_database_url.parse(
-        DB_URL,
+    'default': dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
         conn_health_checks=True,
     )
