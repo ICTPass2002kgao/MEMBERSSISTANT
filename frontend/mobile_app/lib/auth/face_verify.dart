@@ -51,6 +51,9 @@ class _LandlordFaceVerificationScreenState
   bool _isVerifyingLiveness = false;
   bool _isVerifyingBackend = false;
 
+  // Debug toggle: Set to false by default to speed up development.
+  bool _enableLivenessCheck = false;
+
   String _processStatus = "Initializing...";
   bool _isCameraInitialized = false;
   late AnimationController _scannerController;
@@ -155,7 +158,6 @@ class _LandlordFaceVerificationScreenState
     }
   }
 
-  // This single method sends everything to the backend endpoint
   Future<void> _processBackendUpload(Uint8List capturedBytes) async {
     setState(() {
       _processStatus = "Verifying biometrics & securing documents...";
@@ -218,10 +220,13 @@ class _LandlordFaceVerificationScreenState
 
         _showMessage("Digital verification successful! Welcome.", Colors.green);
 
-        // TODO: Navigate to Landlord Dashboard
-        // Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LandlordDashboard()), (route) => false);
+        // Add a slight delay for the user to hear the sound and see the message before leaving
+        await Future.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+
+        // Return to the previous screen (e.g., dashboard or profile)
+        Navigator.pop(context, true);
       } else if (response.statusCode == 403) {
-        // Biometric Mismatch - Flagged for manual review
         _showMessage(
           "Biometric mismatch. Account flagged for manual review.",
           Colors.orange,
@@ -229,7 +234,9 @@ class _LandlordFaceVerificationScreenState
         setState(() {
           widget.userData['manual_verification_status'] = true;
         });
-        Navigator.pop(context); // Go back to show the locked screen
+
+        if (!mounted) return;
+        Navigator.pop(context);
       } else {
         final error =
             jsonDecode(responseData)['error'] ?? "Verification failed.";
@@ -307,7 +314,7 @@ class _LandlordFaceVerificationScreenState
       ),
       body: Stack(
         children: [
-          const BubbleBackground(),
+          const BubbleBackground(), // Ensure you have this widget defined elsewhere in your project
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -316,6 +323,11 @@ class _LandlordFaceVerificationScreenState
                   constraints: const BoxConstraints(maxWidth: 600),
                   child: Column(
                     children: [
+                      // --- DEBUG TOGGLE ---
+                      // Hidden automatically if compiled in Release mode
+                      if (kDebugMode)
+                        _buildDebugToggle(textColor, primaryColor),
+
                       _buildDetailsPanel(textColor, hintColor),
                       const SizedBox(height: 32),
                       if (!_hasAgreedToDisclaimer)
@@ -331,6 +343,43 @@ class _LandlordFaceVerificationScreenState
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDebugToggle(Color textColor, Color primaryColor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: _glassContainer(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.bug_report, color: Colors.orange, size: 20),
+                const SizedBox(width: 10),
+                Text(
+                  "DEBUG: Liveness Check",
+                  style: GoogleFonts.poppins(
+                    color: textColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            Switch(
+              value: _enableLivenessCheck,
+              activeColor: primaryColor,
+              onChanged: (val) {
+                setState(() {
+                  _enableLivenessCheck = val;
+                });
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -484,89 +533,63 @@ class _LandlordFaceVerificationScreenState
                   child: (!kIsWeb && _isVerifyingLiveness)
                       ? getLivenessWidget(
                           onSuccess: (result) async {
+                            // 1. Instantly hide the liveness widget to force it to release the camera hardware
                             setState(() {
                               _isVerifyingLiveness = false;
                               _isVerifyingBackend = true;
-                              _processStatus = 'Securing transmission...';
+                              _processStatus =
+                                  'Capturing secure facial biometric...';
                             });
 
                             try {
-                              Uint8List? capturedBytes;
-                              dynamic res = result;
+                              // 2. Give the iOS/Android operating system 500ms to fully release the camera lock
+                              await Future.delayed(
+                                const Duration(milliseconds: 500),
+                              );
 
-                              if (res is Uint8List) {
-                                capturedBytes = res;
-                              } else {
-                                try {
-                                  capturedBytes ??= res.imageBytes;
-                                } catch (_) {}
-                                try {
-                                  capturedBytes ??= res.capturedImage;
-                                } catch (_) {}
-                                try {
-                                  capturedBytes ??= res.jpegBytes;
-                                } catch (_) {}
-                                try {
-                                  capturedBytes ??= res.image;
-                                } catch (_) {}
-
-                                if (capturedBytes == null) {
-                                  String? path;
-                                  try {
-                                    path ??= res.imagePath;
-                                  } catch (_) {}
-                                  try {
-                                    path ??= res.path;
-                                  } catch (_) {}
-
-                                  if (path != null && path.isNotEmpty) {
-                                    final file = File(path);
-                                    capturedBytes = await file.readAsBytes();
-                                  }
-                                }
-                              }
-
-                              if (capturedBytes == null) {
-                                await Future.delayed(
-                                  const Duration(milliseconds: 600),
-                                );
-                                if (_cameraController == null ||
-                                    !_cameraController!.value.isInitialized) {
-                                  final cameras = await availableCameras();
-                                  CameraDescription targetCamera = cameras
-                                      .firstWhere(
-                                        (camera) =>
-                                            camera.lensDirection ==
-                                            CameraLensDirection.front,
-                                        orElse: () => cameras.first,
-                                      );
-                                  _cameraController = CameraController(
-                                    targetCamera,
-                                    ResolutionPreset.medium,
-                                    enableAudio: false,
+                              // 3. Re-initialize our own camera controller safely
+                              final cameras = await availableCameras();
+                              CameraDescription targetCamera = cameras
+                                  .firstWhere(
+                                    (camera) =>
+                                        camera.lensDirection ==
+                                        CameraLensDirection.front,
+                                    orElse: () => cameras.first,
                                   );
-                                  await _cameraController!.initialize();
-                                }
-                                await Future.delayed(
-                                  const Duration(milliseconds: 200),
-                                );
-                                final XFile capturedFile =
-                                    await _cameraController!.takePicture();
-                                capturedBytes = await capturedFile
-                                    .readAsBytes();
-                              }
 
-                              if (capturedBytes != null) {
-                                await _processBackendUpload(capturedBytes);
-                              } else {
-                                _handleFailure(
-                                  reason:
-                                      "Camera hardware failed to capture image.",
-                                );
-                              }
+                              _cameraController = CameraController(
+                                targetCamera,
+                                ResolutionPreset.medium,
+                                enableAudio: false,
+                              );
+
+                              await _cameraController!.initialize();
+
+                              // 4. Give the camera a brief moment to adjust lighting and focus
+                              await Future.delayed(
+                                const Duration(milliseconds: 500),
+                              );
+
+                              // 5. Take the actual photo
+                              final XFile capturedFile =
+                                  await _cameraController!.takePicture();
+                              Uint8List capturedBytes = await capturedFile
+                                  .readAsBytes();
+
+                              // 6. Pause the camera to save battery
+                              await _cameraController?.pausePreview();
+
+                              // 7. Send everything to your Django backend
+                              setState(() {
+                                _processStatus =
+                                    'Verifying biometrics & securing documents...';
+                              });
+
+                              await _processBackendUpload(capturedBytes);
                             } catch (e) {
                               _handleFailure(
-                                reason: "Secure capture failed: $e",
+                                reason:
+                                    "Failed to capture final biometric image: $e",
                               );
                             }
                           },
@@ -652,7 +675,7 @@ class _LandlordFaceVerificationScreenState
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                onPressed: kIsWeb
+                onPressed: (kIsWeb || !_enableLivenessCheck)
                     ? _captureWebAndVerify
                     : _startLivenessCapture,
                 child: Text(
