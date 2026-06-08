@@ -392,8 +392,33 @@ def verify_landlord_identity_app(request):
     try:
         with open(temp_live, 'wb+') as f:
             for chunk in live_face.chunks(): f.write(chunk)
-        with open(temp_id, 'wb+') as f:
-            for chunk in id_document.chunks(): f.write(chunk)
+
+        # Dynamic validation handler for both PDFs and normal Images
+        id_ext = os.path.splitext(id_document.name)[1].lower()
+        if id_ext == '.pdf' or id_document.content_type == 'application/pdf':
+            # Create a localized temporary storage slot strictly for the incoming PDF document
+            temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
+            try:
+                with open(temp_pdf, 'wb+') as f:
+                    for chunk in id_document.chunks(): f.write(chunk)
+                
+                from pdf2image import convert_from_path
+                images = convert_from_path(temp_pdf, first_page=1, last_page=1)
+                if images:
+                    # Save page 1 straight into your standard image temporary file path
+                    images[0].save(temp_id, 'JPEG')
+                else:
+                    return Response({'error': 'The provided PDF container holds no visible layout pages.'}, status=400)
+            except ImportError:
+                logger.error("Missing dependency: pdf2image library is missing from global environment configuration.")
+                return Response({'error': 'Server dependency layout error: pdf2image is missing.'}, status=500)
+            finally:
+                if os.path.exists(temp_pdf): 
+                    os.remove(temp_pdf)
+        else:
+            # Handle native raw image processing directly
+            with open(temp_id, 'wb+') as f:
+                for chunk in id_document.chunks(): f.write(chunk)
 
         result = perform_verification(live_path=temp_live, ref_path=temp_id, is_encrypted_ref=False)
         
