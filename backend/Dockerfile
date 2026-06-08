@@ -1,4 +1,3 @@
-
 FROM python:3.14-slim 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED 1
@@ -11,9 +10,9 @@ RUN apt-get update && \
     libx11-dev \
     libgtk-3-dev \
     python3-dev \
+    poppler-utils \
     && \
-    rm -rf /var/lib/apt/lists/* 
-WORKDIR /app
+    rm -rf /var/lib/apt/lists/* WORKDIR /app
  
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
