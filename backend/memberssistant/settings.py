@@ -72,14 +72,26 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'memberssistant.wsgi.application'
 
-# Database
+DB_URL = os.environ.get('DATABASE_URL', '').strip()
+
+# Default to standard native Django SQLite (Bypasses dj_database_url entirely)
 DATABASES = {
-    'default': dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
 }
+
+# Only try to parse the Postgres URL if it actually looks like a real URL
+if DB_URL and len(DB_URL) > 10 and '://' in DB_URL:
+    try:
+        DATABASES['default'] = dj_database_url.parse(
+            DB_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    except Exception as e:
+        print(f"WARNING: Invalid DATABASE_URL detected. Falling back to SQLite. Error: {e}")
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
