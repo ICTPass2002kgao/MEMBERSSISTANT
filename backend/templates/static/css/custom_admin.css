@@ -1,0 +1,24 @@
+/* Apply Poppins to all standard text and Element UI components */
+body, 
+#app, 
+.el-button, 
+.el-input, 
+.el-table, 
+.el-menu, 
+.el-submenu__title,
+.el-dialog, 
+.el-form-item__label, 
+.el-message-box,
+h1, h2, h3, h4, h5, h6, p, span, a, div {
+    font-family: 'Poppins', sans-serif !important;
+}
+
+/* Specifically prevent Poppins from overwriting your sidebar and button icons */
+[class^="el-icon-"], 
+[class*=" el-icon-"], 
+.fas, 
+.far, 
+.fab, 
+.fa {
+    font-family: inherit !important;
+}
