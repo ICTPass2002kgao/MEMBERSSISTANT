@@ -24,7 +24,7 @@ ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.s
 
 cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
-
+CORS_ALLOW_ALL_ORIGINS = True
 # Critical for React -> Django POST requests (Login/Register)
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS 
 
