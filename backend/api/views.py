@@ -15,7 +15,7 @@ from django.db import transaction
 from django.db.models import Q, Avg, Count
 from django.contrib.auth.models import User
 from django.views.decorators.csrf import csrf_exempt
-from firebase_admin import messaging 
+from firebase_admin import messaging
 from rest_framework import viewsets, status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -30,7 +30,7 @@ from firebase_admin import auth, storage
 from cryptography.fernet import Fernet
 
 # Custom Authentication & Permissions
-from .authentication import FirebaseAuthentication 
+from .authentication import FirebaseAuthentication
 from .permissions import IsLandlord
 from .face_utils import perform_verification, decrypt_to_base64
 
@@ -94,9 +94,9 @@ class MedicalResponderProfileViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['POST'])
-@authentication_classes([FirebaseAuthentication]) 
-@permission_classes([IsAuthenticated]) 
-@parser_classes([MultiPartParser, FormParser]) 
+@authentication_classes([FirebaseAuthentication])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
 def add_medical_responder(request):
     """
     Securely registers a new Medical Responder.
@@ -393,10 +393,8 @@ def verify_landlord_identity_app(request):
         with open(temp_live, 'wb+') as f:
             for chunk in live_face.chunks(): f.write(chunk)
 
-        # Dynamic validation handler for both PDFs and normal Images
         id_ext = os.path.splitext(id_document.name)[1].lower()
         if id_ext == '.pdf' or id_document.content_type == 'application/pdf':
-            # Create a localized temporary storage slot strictly for the incoming PDF document
             temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
             try:
                 with open(temp_pdf, 'wb+') as f:
@@ -405,7 +403,6 @@ def verify_landlord_identity_app(request):
                 from pdf2image import convert_from_path
                 images = convert_from_path(temp_pdf, first_page=1, last_page=1)
                 if images:
-                    # Save page 1 straight into your standard image temporary file path
                     images[0].save(temp_id, 'JPEG')
                 else:
                     return Response({'error': 'The provided PDF container holds no visible layout pages.'}, status=400)
@@ -416,7 +413,6 @@ def verify_landlord_identity_app(request):
                 if os.path.exists(temp_pdf): 
                     os.remove(temp_pdf)
         else:
-            # Handle native raw image processing directly
             with open(temp_id, 'wb+') as f:
                 for chunk in id_document.chunks(): f.write(chunk)
 
@@ -426,9 +422,9 @@ def verify_landlord_identity_app(request):
             return Response({'error': 'Biometric verification processing failed.'}, status=400)
             
         if not result.get('matched'):
-            landlord.manual_verification_status = True
-            landlord.save()
-            return Response({'error': 'Biometric mismatch. Identity theft suspected. Flagged for manual verification.'}, status=403)
+            # CHANGED: We removed the auto-flagging logic here. 
+            # It just returns an error to allow the user to retry on the frontend.
+            return Response({'error': 'Biometric mismatch. Identity theft suspected or poor image quality.'}, status=403)
 
         cipher_suite = Fernet(settings.FERNET_KEY)
         bucket = storage.bucket()
@@ -466,6 +462,20 @@ def verify_landlord_identity_app(request):
     finally:
         if os.path.exists(temp_live): os.remove(temp_live)
         if os.path.exists(temp_id): os.remove(temp_id)
+
+
+# NEW ENDPOINT: Triggered only when the user specifically selects "Manual Review" in the app dialog
+@api_view(['POST'])
+@authentication_classes([FirebaseAuthentication])
+@permission_classes([IsAuthenticated, IsLandlord])
+def request_manual_review(request):
+    try:
+        landlord = LandlordProfile.objects.get(firebase_uid=request.user.firebase_uid)
+        landlord.manual_verification_status = True
+        landlord.save()
+        return Response({'message': 'Account officially flagged for manual administrator review.'}, status=200)
+    except LandlordProfile.DoesNotExist:
+        return Response({'error': 'Landlord profile not found.'}, status=404)
 
 
 # ----------------------------------------------------------------------
@@ -608,6 +618,48 @@ class LandlordProfileViewSet(BaseSecureViewSet):
     serializer_class = LandlordProfileSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['firebase_uid']
+
+    @action(detail=True, methods=['get'], url_path='decrypted-document')
+    def get_decrypted_document(self, request, pk=None):
+        doc_type = request.query_params.get('type')
+        if doc_type not in ['contract', 'face', 'id_document']:
+            return Response({'error': 'Invalid document type requested.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        landlord = self.get_object()
+        
+        if doc_type == 'contract':
+            file_url = landlord.contract_url
+        elif doc_type == 'face':
+            file_url = landlord.face_url
+        else:
+            file_url = landlord.id_document_url
+
+        if not file_url:
+            return Response({'error': 'Document does not exist for this landlord.'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            resp = requests.get(file_url)
+            if resp.status_code != 200:
+                return Response({'error': 'Failed to retrieve encrypted file from storage.'}, status=status.HTTP_404_NOT_FOUND)
+            
+            cipher_suite = Fernet(settings.FERNET_KEY)
+            decrypted_data = cipher_suite.decrypt(resp.content)
+            
+            filename = file_url.split('?')[0].replace('.enc', '')
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type:
+                mime_type = 'application/octet-stream'
+
+            doc_base64 = base64.b64encode(decrypted_data).decode('utf-8')
+            
+            return Response({
+                'document_base64': doc_base64,
+                'mime_type': mime_type
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Landlord Document Decryption Error: {e}", exc_info=True)
+            return Response({'error': 'Decryption failed due to an internal error.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class BlockViewSet(BaseSecureViewSet):
     queryset = Block.objects.all()

@@ -75,4 +75,5 @@ urlpatterns = [
     path('emergencies/unlock-medical-data/', unlock_medical_data, name='unlock_medical_data'),
     path('add-medical-responder/', add_medical_responder, name='add_medical_responder'),
     path('verify-responder-login/', verify_responder_login, name='verify_responder_login'),
+    path('request-manual-review/', views.request_manual_review, name='request_manual_review'),
 ]
