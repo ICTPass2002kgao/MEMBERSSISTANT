@@ -931,19 +931,29 @@ class GatePassViewSet(BaseSecureViewSet):
 
     def perform_create(self, serializer):
         try:
-            # If the requester is a student, automatically assign the pass to them
+            # 1. Try to auto-assign if the requester is a student
             student = StudentProfile.objects.get(firebase_uid=self.request.user.firebase_uid)
             serializer.save(student=student)
-        except StudentProfile.DoesNotExist: 
-            # If the requester is a Landlord, they must provide the student in the payload
-            if 'student' not in serializer.validated_data:
-                raise ValidationError({"error": "A student must be selected when a landlord issues a gate pass."})
             
-            # Save using the student ID provided in the React frontend payload
-            serializer.save()
+        except StudentProfile.DoesNotExist: 
+            # 2. Fallback for Landlords
+            raw_data = self.request.data
+            
+            # Safely check for 'student' or 'student_id' 
+            student_id = raw_data.get('student') or raw_data.get('student_id')
+            
+            if not student_id:
+                # THIS IS THE MAGIC LINE: It will now tell you EXACTLY what Django received
+                raise ValidationError({"error": f"Student missing. Payload received by Django: {raw_data}"})
+            
+            try:
+                target_student = StudentProfile.objects.get(id=student_id)
+                serializer.save(student=target_student)
+            except StudentProfile.DoesNotExist:
+                raise ValidationError({"error": f"Student record {student_id} does not exist in the database."})
+                
         except AttributeError:
             raise ValidationError({"error": "Authentication token missing valid UID."})
-
 class NotificationViewSet(BaseSecureViewSet):
     serializer_class = NotificationSerializer
     filter_backends = [DjangoFilterBackend]
