@@ -367,102 +367,81 @@ def unlock_medical_data(request):
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated, IsLandlord])
-@parser_classes([MultiPartParser, FormParser])
+@parser_classes([MultiPartParser, FormParser]) 
 def verify_landlord_identity_app(request):
-    try:
-        landlord = LandlordProfile.objects.get(firebase_uid=request.user.firebase_uid)
-    except LandlordProfile.DoesNotExist:
-        return Response({'error': 'Landlord profile not found.'}, status=404)
+    """
+    Handles secure identity document uploads from the Flutter mobile app.
+    Encrypts files using Fernet before streaming them directly to Firebase Storage,
+    preserving original file extensions for correct MIME type resolution.
+    """
+    landlord = getattr(request.user, 'landlord_profile', None)
+    if not landlord:
+        return Response({'error': 'User profile is not registered as a landlord.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    live_face = request.FILES.get('live_face')
+    live_face = request.FILES.get('face_image')
     id_document = request.FILES.get('id_document')
     contract_file = request.FILES.get('contract_file')
-    device_id = request.data.get('device_id')
 
-    if not all([live_face, id_document, contract_file, device_id]):
-        return Response({'error': 'Missing live face, ID document, contract, or device ID.'}, status=400)
-        
-    for file in [live_face, id_document, contract_file]:
-        if file.size > MAX_UPLOAD_SIZE:
-            return Response({'error': 'One or more files exceed the 5MB size limit.'}, status=400)
+    if not live_face or not id_document or not contract_file:
+        return Response({'error': 'Missing required files. Please upload face, ID, and contract.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    temp_live = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
-    temp_id = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
-    
     try:
-        with open(temp_live, 'wb+') as f:
-            for chunk in live_face.chunks(): f.write(chunk)
-
-        id_ext = os.path.splitext(id_document.name)[1].lower()
-        if id_ext == '.pdf' or id_document.content_type == 'application/pdf':
-            temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
-            try:
-                with open(temp_pdf, 'wb+') as f:
-                    for chunk in id_document.chunks(): f.write(chunk)
-                
-                from pdf2image import convert_from_path
-                images = convert_from_path(temp_pdf, first_page=1, last_page=1)
-                if images:
-                    images[0].save(temp_id, 'JPEG')
-                else:
-                    return Response({'error': 'The provided PDF container holds no visible layout pages.'}, status=400)
-            except ImportError:
-                logger.error("Missing dependency: pdf2image library is missing from global environment configuration.")
-                return Response({'error': 'Server dependency layout error: pdf2image is missing.'}, status=500)
-            finally:
-                if os.path.exists(temp_pdf): 
-                    os.remove(temp_pdf)
-        else:
-            with open(temp_id, 'wb+') as f:
-                for chunk in id_document.chunks(): f.write(chunk)
-
-        result = perform_verification(live_path=temp_live, ref_path=temp_id, is_encrypted_ref=False)
-        
-        if result.get('error'): 
-            return Response({'error': 'Biometric verification processing failed.'}, status=400)
-            
-        if not result.get('matched'):
-            # CHANGED: We removed the auto-flagging logic here. 
-            # It just returns an error to allow the user to retry on the frontend.
-            return Response({'error': 'Biometric mismatch. Identity theft suspected or poor image quality.'}, status=403)
-
         cipher_suite = Fernet(settings.FERNET_KEY)
         bucket = storage.bucket()
 
+        # 1. Encrypt and Upload Face (Enforced as .jpg.enc)
         live_face.seek(0)
-        face_blob = bucket.blob(f"secure_faces/landlord_{landlord.id}_live_{uuid.uuid4().hex}.enc")
-        face_blob.upload_from_string(cipher_suite.encrypt(live_face.read()), content_type='application/octet-stream')
+        face_blob_name = f"secure_faces/landlord_{landlord.id}_live_{uuid.uuid4().hex}.jpg.enc"
+        face_blob = bucket.blob(face_blob_name)
+        face_blob.upload_from_string(
+            cipher_suite.encrypt(live_face.read()), 
+            content_type='application/octet-stream'
+        )
         face_blob.make_public()
-
-        id_document.seek(0)
-        id_blob = bucket.blob(f"secure_docs/landlord_{landlord.id}_id_{uuid.uuid4().hex}.enc")
-        id_blob.upload_from_string(cipher_suite.encrypt(id_document.read()), content_type='application/octet-stream')
-        id_blob.make_public()
-        
-        contract_file.seek(0)
-        ext = os.path.splitext(contract_file.name)[1]
-        contract_blob = bucket.blob(f"secure_contracts/landlord_{landlord.id}_contract_{uuid.uuid4().hex}{ext}.enc")
-        contract_blob.upload_from_string(cipher_suite.encrypt(contract_file.read()), content_type='application/octet-stream')
-        contract_blob.make_public()
-
         landlord.face_url = face_blob.public_url
+
+        # 2. Encrypt and Upload ID Document (Dynamically retains .pdf, .jpg, .png, etc.)
+        id_document.seek(0)
+        id_ext = os.path.splitext(id_document.name)[1].lower()
+        if not id_ext:
+            id_ext = '.jpg'  # Fallback security default
+        id_blob_name = f"secure_docs/landlord_{landlord.id}_id_{uuid.uuid4().hex}{id_ext}.enc"
+        id_blob = bucket.blob(id_blob_name)
+        id_blob.upload_from_string(
+            cipher_suite.encrypt(id_document.read()), 
+            content_type='application/octet-stream'
+        )
+        id_blob.make_public()
         landlord.id_document_url = id_blob.public_url
+
+        # 3. Encrypt and Upload Contract (Dynamically retains extension, typically .pdf)
+        contract_file.seek(0)
+        contract_ext = os.path.splitext(contract_file.name)[1].lower()
+        if not contract_ext:
+            contract_ext = '.pdf'
+        contract_blob_name = f"secure_contracts/landlord_{landlord.id}_contract_{uuid.uuid4().hex}{contract_ext}.enc"
+        contract_blob = bucket.blob(contract_blob_name)
+        contract_blob.upload_from_string(
+            cipher_suite.encrypt(contract_file.read()), 
+            content_type='application/octet-stream'
+        )
+        contract_blob.make_public()
         landlord.contract_url = contract_blob.public_url
-        landlord.contract_signed = True
-        landlord.device_id = device_id
-        landlord.digital_verification_status = True
-        landlord.is_verified = True
+
+        # Save the updated URLs to the landlord record
+        landlord.is_identity_verified = False  # Set to false pending admin review
         landlord.save()
 
-        return Response({'message': 'Landlord digital verification successful. Data securely stored.'}, status=200)
+        return Response({
+            'message': 'Identity documents successfully uploaded and encrypted.',
+            'face_url': landlord.face_url,
+            'id_document_url': landlord.id_document_url,
+            'contract_url': landlord.contract_url
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Verification Error: {e}", exc_info=True)
-        return Response({'error': 'An internal server error occurred during verification.'}, status=500)
-    finally:
-        if os.path.exists(temp_live): os.remove(temp_live)
-        if os.path.exists(temp_id): os.remove(temp_id)
-
+        logger.error(f"Error during landlord verification asset upload: {e}", exc_info=True)
+        return Response({'error': 'Internal server error processing security files.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # NEW ENDPOINT: Triggered only when the user specifically selects "Manual Review" in the app dialog
 @api_view(['POST'])
@@ -621,6 +600,14 @@ class LandlordProfileViewSet(BaseSecureViewSet):
 
     @action(detail=True, methods=['get'], url_path='decrypted-document')
     def get_decrypted_document(self, request, pk=None):
+        """
+        Retrieves, decrypts, and serves an admin-requested landlord credential asset.
+        Resolves accurate MIME types naturally based on the preserved storage extensions.
+        """
+        import requests
+        import base64
+        import mimetypes
+
         doc_type = request.query_params.get('type')
         if doc_type not in ['contract', 'face', 'id_document']:
             return Response({'error': 'Invalid document type requested.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -635,21 +622,31 @@ class LandlordProfileViewSet(BaseSecureViewSet):
             file_url = landlord.id_document_url
 
         if not file_url:
-            return Response({'error': 'Document does not exist for this landlord.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Requested secure document path does not exist.'}, status=status.HTTP_404_NOT_FOUND)
 
         try:
             resp = requests.get(file_url)
             if resp.status_code != 200:
-                return Response({'error': 'Failed to retrieve encrypted file from storage.'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'Failed to stream asset payload from storage cluster.'}, status=status.HTTP_404_NOT_FOUND)
             
+            # Decrypt payload using server cluster key
             cipher_suite = Fernet(settings.FERNET_KEY)
             decrypted_data = cipher_suite.decrypt(resp.content)
             
+            # Extract extension by removing query tokens and the encryption suffix
             filename = file_url.split('?')[0].replace('.enc', '')
             mime_type, _ = mimetypes.guess_type(filename)
+            
+            # Fallback block if the file metadata structure is missing extensions
             if not mime_type:
-                mime_type = 'application/octet-stream'
+                if doc_type == 'face':
+                    mime_type = 'image/jpeg'
+                elif doc_type == 'contract':
+                    mime_type = 'application/pdf'
+                else:
+                    mime_type = 'application/octet-stream'
 
+            # Pack raw decrypted stream safely into Base64 for JSON serialization
             doc_base64 = base64.b64encode(decrypted_data).decode('utf-8')
             
             return Response({
@@ -658,9 +655,8 @@ class LandlordProfileViewSet(BaseSecureViewSet):
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.error(f"Landlord Document Decryption Error: {e}", exc_info=True)
-            return Response({'error': 'Decryption failed due to an internal error.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+            logger.error(f"Landlord Secure Decryption Core Failure: {e}", exc_info=True)
+            return Response({'error': 'Decryption pipeline aborted due to an internal execution error.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class BlockViewSet(BaseSecureViewSet):
     queryset = Block.objects.all()
     serializer_class = BlockSerializer
