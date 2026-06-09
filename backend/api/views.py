@@ -31,7 +31,7 @@ from cryptography.fernet import Fernet
 
 # Custom Authentication & Permissions
 from .authentication import FirebaseAuthentication
-from .permissions import IsLandlord
+from .permissions import IsAttendant, IsLandlord
 from .face_utils import perform_verification, decrypt_to_base64
 
 # Models
@@ -923,7 +923,6 @@ class RoomInspectionViewSet(BaseSecureViewSet):
     serializer_class = RoomInspectionSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['is_damage_found', 'attendant__firebase_uid', 'permit__student__firebase_uid']
-
 class GatePassViewSet(BaseSecureViewSet):
     queryset = GatePass.objects.all()
     serializer_class = GatePassSerializer
@@ -932,10 +931,16 @@ class GatePassViewSet(BaseSecureViewSet):
 
     def perform_create(self, serializer):
         try:
+            # If the requester is a student, automatically assign the pass to them
             student = StudentProfile.objects.get(firebase_uid=self.request.user.firebase_uid)
             serializer.save(student=student)
         except StudentProfile.DoesNotExist: 
-            raise ValidationError({"error": "Only student profiles can request a gate pass."})
+            # If the requester is a Landlord, they must provide the student in the payload
+            if 'student' not in serializer.validated_data:
+                raise ValidationError({"error": "A student must be selected when a landlord issues a gate pass."})
+            
+            # Save using the student ID provided in the React frontend payload
+            serializer.save()
         except AttributeError:
             raise ValidationError({"error": "Authentication token missing valid UID."})
 
@@ -1361,7 +1366,7 @@ def paystack_webhook(request):
     
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAuthenticated,IsAttendant]) 
 def verify_gate_pass_qr(request):
     qr_reference = request.data.get('qr_reference')
 
