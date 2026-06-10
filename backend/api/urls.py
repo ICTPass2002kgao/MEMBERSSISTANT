@@ -68,6 +68,7 @@ urlpatterns = [
     path('verify-permit-qr/', verify_permit_qr, name='verify_permit_qr'), 
     path('permits/verify-face/', views.verify_face_match, name='verify_face_at_gate'),
     path('verify-gate-pass-qr/', views.verify_gate_pass_qr, name='verify_gate_pass_qr'),
+    path('verify-student-presence/<str:student_id>/', views.verify_student_presence, name='verify_student_presence'),
     path('update-fcm-token/', views.update_fcm_token, name='update_fcm_token'), 
     path('students/<uuid:student_id>/decrypted-face/', views.fetch_decrypted_face, name='fetch_decrypted_face'),
     path('apply-accommodation/', ApplyAccommodationView.as_view(), name='apply-accommodation'),
