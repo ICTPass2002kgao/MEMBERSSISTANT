@@ -10,10 +10,13 @@ import 'package:mobile_app/student_screens/tabs/gate_passes_tab.dart';
 import 'package:mobile_app/student_screens/tabs/dashboard.dart';
 import 'package:mobile_app/student_screens/tabs/home_tab.dart';
 import 'package:mobile_app/student_screens/tabs/maintanance_tab.dart';
+import 'package:mobile_app/student_screens/tabs/medical_data.dart';
 import 'package:mobile_app/student_screens/tabs/notifications.dart';
 import 'package:mobile_app/student_screens/tabs/permits_tab.dart';
 import 'package:mobile_app/student_screens/tabs/applications_tab.dart';
-import 'package:mobile_app/student_screens/tabs/campus_map_tab.dart'; 
+import 'package:mobile_app/student_screens/tabs/campus_map_tab.dart';
+import 'package:mobile_app/student_screens/tabs/report_emergency.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -50,6 +53,7 @@ class _StudentMainMenuState extends State<StudentMainMenu> {
     super.initState();
     _loadUserData();
     _fetchUnreadCount();
+    _checkMedicalProfileStatus(); // NEW: Automatically check medical profile on boot
   }
 
   @override
@@ -57,6 +61,52 @@ class _StudentMainMenuState extends State<StudentMainMenu> {
     _statusCheckTimer?.cancel(); // Prevent memory leaks when navigating away
     super.dispose();
   }
+
+  // --- NEW: MEDICAL PROFILE REDIRECT LOGIC ---
+  Future<void> _checkMedicalProfileStatus() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final idToken = await user.getIdToken();
+
+      final response = await http.get(
+        Uri.parse('${ApiClass().getApiBaseUrl()}/medical-profiles/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final results = data is List ? data : (data['results'] ?? []);
+
+        // If the medical profile array is empty, the student hasn't filled it out
+        if (results.isEmpty && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "CRITICAL: You must complete your Medical Profile for emergency dispatch.",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 5),
+            ),
+          );
+
+          // Redirect them immediately to the medical entry screen
+          Navigator.push(
+            context,
+            CupertinoPageRoute(builder: (_) => const MedicalDataEntryScreen()),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Failed to check medical profile status: $e");
+    }
+  }
+  // -------------------------------------------
 
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -243,14 +293,6 @@ class _StudentMainMenuState extends State<StudentMainMenu> {
     // GLOBAL TABS FOR ALL STUDENTS (Assigned and Unassigned)
     activeTabs.add(
       NavItemData(
-        icon: CupertinoIcons.map_fill,
-        label: 'Campus',
-        page: const CampusMapTab(),
-      ),
-    );
-
-    activeTabs.add(
-      NavItemData(
         icon: CupertinoIcons.bell_fill,
         label: 'Alerts',
         page: const Notifications(),
@@ -284,9 +326,49 @@ class _StudentMainMenuState extends State<StudentMainMenu> {
     return Scaffold(
       backgroundColor: bgColor,
       extendBody: true,
-       body: activeTabs.isEmpty
+      body: activeTabs.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : activeTabs[_selectedIndex].page,
+      // --- DUAL FLOATING ACTION BUTTONS ---
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: FloatingActionButton(
+              heroTag:
+                  "campusMapBtn", // Unique tag required when using multiple FABs
+              backgroundColor: primaryColor,
+              elevation: 6,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CampusMapTab()),
+                );
+              },
+              child: const Icon(CupertinoIcons.map_fill, color: Colors.white),
+            ),
+          ),
+          const SizedBox(height: 16), // Spacing between the buttons
+          FloatingActionButton(
+            heroTag:
+                "emergencyBtn", // Unique tag required when using multiple FABs
+            backgroundColor: Colors.redAccent,
+            elevation: 6,
+            onPressed: () {
+              Navigator.push(
+                context,
+                CupertinoPageRoute(
+                  builder: (context) => const EmergencyReportingScreen(),
+                ),
+              );
+            },
+            child: const Icon(Icons.emergency, color: Colors.white),
+          ),
+        ],
+      ),
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.only(left: 24.0, right: 24.0, bottom: 32.0),
         child: ClipRRect(

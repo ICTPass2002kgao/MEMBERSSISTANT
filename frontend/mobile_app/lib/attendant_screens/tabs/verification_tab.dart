@@ -646,7 +646,7 @@ class _NeumorphicVerificationScannerState
       var request = http.MultipartRequest(
         'POST',
         Uri.parse(
-          '${ApiClass().getApiBaseUrl()}/students/${widget.student['id']}/verify-presence/',
+          '${ApiClass().getApiBaseUrl()}/verify-student-presence/${widget.student['id']}/',
         ),
       );
 

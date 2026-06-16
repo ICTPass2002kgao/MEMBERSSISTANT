@@ -209,7 +209,7 @@ class SecurityHomeTab extends StatelessWidget {
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton.icon(
-                    onPressed: () => onNavigate(1), // Open Scanner
+                    onPressed: () => onNavigate(2), // Open Scanner
                     icon: const Icon(
                       CupertinoIcons.qrcode_viewfinder,
                       color: Colors.black87,

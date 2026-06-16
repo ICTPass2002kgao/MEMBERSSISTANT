@@ -17,51 +17,12 @@ class GatePassesTab extends StatefulWidget {
 
 class _GatePassesTabState extends State<GatePassesTab> {
   bool _isLoading = true;
-  bool _isSubmitting = false;
-  int _currentViewIndex = 0; // 0 = Register Asset, 1 = My Gate Passes
-
   List<dynamic> _myGatePasses = [];
-
-  // Dynamic Form Controllers for multiple items
-  final List<Map<String, TextEditingController>> _assetItems = [
-    {'name': TextEditingController(), 'number': TextEditingController()},
-  ];
-
-  final int _maxItems =
-      4; // Prevent adding too many items to avoid database string limits
 
   @override
   void initState() {
     super.initState();
     _fetchGatePasses();
-  }
-
-  @override
-  void dispose() {
-    for (var item in _assetItems) {
-      item['name']?.dispose();
-      item['number']?.dispose();
-    }
-    super.dispose();
-  }
-
-  void _addAssetField() {
-    if (_assetItems.length < _maxItems) {
-      setState(() {
-        _assetItems.add({
-          'name': TextEditingController(),
-          'number': TextEditingController(),
-        });
-      });
-    }
-  }
-
-  void _removeAssetField(int index) {
-    setState(() {
-      _assetItems[index]['name']?.dispose();
-      _assetItems[index]['number']?.dispose();
-      _assetItems.removeAt(index);
-    });
   }
 
   Future<void> _fetchGatePasses() async {
@@ -90,79 +51,6 @@ class _GatePassesTabState extends State<GatePassesTab> {
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _submitGatePass() async {
-    // 1. Validate and gather data
-    List<String> names = [];
-    List<String> numbers = [];
-
-    for (var item in _assetItems) {
-      final nameStr = item['name']!.text.trim();
-      final numStr = item['number']!.text.trim();
-
-      if (nameStr.isNotEmpty) {
-        names.add(nameStr);
-        numbers.add(
-          numStr.isEmpty ? 'N/A' : numStr,
-        ); // Default to N/A if no serial is provided for an accessory
-      }
-    }
-
-    if (names.isEmpty) {
-      _showSnackBar("Please provide details for at least one asset.");
-      return;
-    }
-
-    setState(() => _isSubmitting = true);
-
-    try {
-      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
-
-      // Bundle them into single strings joined by " + "
-      final payload = {
-        "asset_name": names.join(' + '),
-        "asset_number": numbers.join(' + '),
-        "is_active": true,
-      };
-
-      final response = await http.post(
-        Uri.parse('${ApiClass().getApiBaseUrl()}/gate-passes/'),
-        headers: {
-          'Authorization': 'Bearer $idToken',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(payload),
-      );
-
-      if (response.statusCode == 201) {
-        // Reset form
-        setState(() {
-          for (var item in _assetItems) {
-            item['name']?.dispose();
-            item['number']?.dispose();
-          }
-          _assetItems.clear();
-          _assetItems.add({
-            'name': TextEditingController(),
-            'number': TextEditingController(),
-          });
-          _currentViewIndex = 1; // Switch to history tab
-        });
-
-        await _fetchGatePasses();
-        _showSuccessDialog(
-          "Bundle Registered!",
-          "Your 3-month gate pass for these items has been generated.",
-        );
-      } else {
-        throw Exception("Server rejected the request.");
-      }
-    } catch (e) {
-      _showSnackBar("Failed to register assets. Please try again.");
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -252,6 +140,7 @@ class _GatePassesTabState extends State<GatePassesTab> {
       body: SafeArea(
         bottom: false,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
@@ -278,213 +167,11 @@ class _GatePassesTabState extends State<GatePassesTab> {
                     ),
                   ),
                   const SizedBox(height: 24),
-
-                  Container(
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: primaryColor.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: primaryColor.withOpacity(0.1)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildSegmentButton(
-                            "Register Assets",
-                            0,
-                            primaryColor,
-                            textColor,
-                            slateColor,
-                          ),
-                        ),
-                        Expanded(
-                          child: _buildSegmentButton(
-                            "My Passes",
-                            1,
-                            primaryColor,
-                            textColor,
-                            slateColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
             Expanded(
-              child: _currentViewIndex == 0
-                  ? _buildRequestForm(primaryColor, slateColor, textColor)
-                  : _buildPassesList(primaryColor, slateColor, textColor),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRequestForm(
-    Color primaryColor,
-    Color slateColor,
-    Color textColor,
-  ) {
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(
-          left: 24,
-          right: 24,
-          bottom: 120,
-          top: 8,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.orangeAccent.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(CupertinoIcons.info_circle_fill, color: Colors.orange),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      "Gate passes are valid for 3 months. You can bundle multiple items (e.g., Laptop + Charger) on a single pass.",
-                      style: TextStyle(
-                        color: Colors.orange,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 32),
-            const Text(
-              "Item Details",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-
-            // Dynamic List of Asset Forms
-            ...List.generate(_assetItems.length, (index) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: primaryColor.withOpacity(0.03),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: primaryColor.withOpacity(0.1)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          "Item ${index + 1}",
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: primaryColor,
-                            fontSize: 12,
-                          ),
-                        ),
-                        if (_assetItems.length > 1)
-                          GestureDetector(
-                            onTap: () => _removeAssetField(index),
-                            child: const Icon(
-                              CupertinoIcons.trash_fill,
-                              color: Colors.redAccent,
-                              size: 18,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildPremiumInput(
-                      "Asset Name",
-                      "e.g., MacBook Pro",
-                      _assetItems[index]['name']!,
-                      CupertinoIcons.device_laptop,
-                      primaryColor,
-                      slateColor,
-                      textColor,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildPremiumInput(
-                      "Serial Number (Optional)",
-                      "e.g., SN: 12345ABC",
-                      _assetItems[index]['number']!,
-                      CupertinoIcons.barcode,
-                      primaryColor,
-                      slateColor,
-                      textColor,
-                    ),
-                  ],
-                ),
-              );
-            }),
-
-            // Add Another Item Button
-            if (_assetItems.length < _maxItems)
-              Center(
-                child: TextButton.icon(
-                  onPressed: _addAssetField,
-                  icon: Icon(
-                    CupertinoIcons.add_circled_solid,
-                    color: primaryColor,
-                  ),
-                  label: Text(
-                    "ADD ANOTHER ITEM",
-                    style: TextStyle(
-                      color: primaryColor,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              height: 60,
-              child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submitGatePass,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                ),
-                child: _isSubmitting
-                    ? const SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 3,
-                        ),
-                      )
-                    : const Text(
-                        "GENERATE GATE PASS",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-              ),
+              child: _buildPassesList(primaryColor, slateColor, textColor),
             ),
           ],
         ),
@@ -497,8 +184,9 @@ class _GatePassesTabState extends State<GatePassesTab> {
     Color slateColor,
     Color textColor,
   ) {
-    if (_isLoading)
+    if (_isLoading) {
       return Center(child: CircularProgressIndicator(color: primaryColor));
+    }
 
     if (_myGatePasses.isEmpty) {
       return Center(
@@ -521,7 +209,7 @@ class _GatePassesTabState extends State<GatePassesTab> {
             ),
             const SizedBox(height: 8),
             Text(
-              "Register your devices to generate gate passes.",
+              "Your landlord has not registered any devices for you.",
               style: TextStyle(color: slateColor),
             ),
           ],
@@ -783,88 +471,6 @@ class _GatePassesTabState extends State<GatePassesTab> {
             ),
           );
         },
-      ),
-    );
-  }
-
-  // --- UI Helpers ---
-
-  Widget _buildSegmentButton(
-    String text,
-    int index,
-    Color primaryColor,
-    Color textColor,
-    Color slateColor,
-  ) {
-    bool isSelected = _currentViewIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _currentViewIndex = index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.all(4),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.white.withOpacity(0.1)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : [],
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isSelected ? primaryColor : slateColor,
-            fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
-            fontSize: 13,
-          ),
-        ),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration(
-    Color primaryColor,
-    Color slateColor,
-    IconData icon,
-  ) {
-    return InputDecoration(
-      prefixIcon: Icon(icon, color: slateColor),
-      filled: true,
-      fillColor: primaryColor.withOpacity(0.05),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: primaryColor.withOpacity(0.1)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: primaryColor, width: 2),
-      ),
-    );
-  }
-
-  Widget _buildPremiumInput(
-    String label,
-    String hint,
-    TextEditingController controller,
-    IconData icon,
-    Color primary,
-    Color slate,
-    Color textCol,
-  ) {
-    return TextFormField(
-      controller: controller,
-      style: TextStyle(color: textCol, fontWeight: FontWeight.w600),
-      decoration: _inputDecoration(primary, slate, icon).copyWith(
-        hintText: hint,
-        hintStyle: TextStyle(color: slate.withOpacity(0.5)),
       ),
     );
   }

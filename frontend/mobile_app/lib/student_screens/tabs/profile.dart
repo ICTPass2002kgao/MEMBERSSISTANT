@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'package:mobile_app/components/api_class.dart';
+import 'package:mobile_app/student_screens/tabs/medical_data.dart'; // Ensure this points to your API class
 
 class StudentProfileScreen extends StatelessWidget {
   final Map<String, dynamic> userData;
@@ -21,12 +25,12 @@ class StudentProfileScreen extends StatelessWidget {
         barrierDismissible: false,
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
-      
+
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      
+
       if (!context.mounted) return;
       Navigator.pop(context); // close loader
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Password reset email sent to $email"),
@@ -57,15 +61,20 @@ class StudentProfileScreen extends StatelessWidget {
     final String? faceUrl = userData['face_url']?.toString();
     final bool hasFace = faceUrl != null && faceUrl.trim().isNotEmpty;
 
-    final String nameStr = "${userData['name']?.toString() ?? ''} ${userData['surname']?.toString() ?? ''}".trim();
+    final String nameStr =
+        "${userData['name']?.toString() ?? ''} ${userData['surname']?.toString() ?? ''}"
+            .trim();
     final String name = nameStr.isNotEmpty ? nameStr : 'Student';
-    
+
     final String email = userData['email']?.toString() ?? 'No email provided';
-    final String studentNo = userData['student_number']?.toString() ?? 'Unknown ID';
+    final String studentNo =
+        userData['student_number']?.toString() ?? 'Unknown ID';
     final String phone = userData['phone']?.toString() ?? 'N/A';
-    final String accName = userData['accommodation_name']?.toString() ?? 'Unassigned';
+    final String accName =
+        userData['accommodation_name']?.toString() ?? 'Unassigned';
     final String blockName = userData['block_name']?.toString() ?? 'Unassigned';
-    final String roomNum = userData['room_number_only']?.toString() ?? 'Unassigned';
+    final String roomNum =
+        userData['room_number_only']?.toString() ?? 'Unassigned';
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -101,7 +110,10 @@ class StudentProfileScreen extends StatelessWidget {
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: primaryColor.withOpacity(0.3), width: 2),
+                      border: Border.all(
+                        color: primaryColor.withOpacity(0.3),
+                        width: 2,
+                      ),
                     ),
                     child: CircleAvatar(
                       radius: 48,
@@ -110,15 +122,33 @@ class StudentProfileScreen extends StatelessWidget {
                       child: !hasFace
                           ? Text(
                               initials.toUpperCase(),
-                              style: TextStyle(color: primaryColor, fontWeight: FontWeight.w900, fontSize: 36),
+                              style: TextStyle(
+                                color: primaryColor,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 36,
+                              ),
                             )
                           : null,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Text(name, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: textColor)),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: textColor,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(studentNo, style: TextStyle(color: slateColor, fontWeight: FontWeight.w700, fontSize: 14)),
+                  Text(
+                    studentNo,
+                    style: TextStyle(
+                      color: slateColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -128,38 +158,124 @@ class StudentProfileScreen extends StatelessWidget {
             // Information Block
             _buildSectionHeader("PERSONAL INFORMATION", primaryColor),
             _buildInfoCard([
-              _buildInfoRow(CupertinoIcons.mail_solid, "Email Address", email, textColor, slateColor),
+              _buildInfoRow(
+                CupertinoIcons.mail_solid,
+                "Email Address",
+                email,
+                textColor,
+                slateColor,
+              ),
               _buildDivider(primaryColor),
-              _buildInfoRow(CupertinoIcons.phone_fill, "Phone Number", phone, textColor, slateColor),
+              _buildInfoRow(
+                CupertinoIcons.phone_fill,
+                "Phone Number",
+                phone,
+                textColor,
+                slateColor,
+              ),
             ], primaryColor),
 
             const SizedBox(height: 24),
 
             _buildSectionHeader("ACCOMMODATION DETAILS", primaryColor),
             _buildInfoCard([
-              _buildInfoRow(CupertinoIcons.building_2_fill, "Property", accName, textColor, slateColor),
+              _buildInfoRow(
+                CupertinoIcons.building_2_fill,
+                "Property",
+                accName,
+                textColor,
+                slateColor,
+              ),
               _buildDivider(primaryColor),
-              _buildInfoRow(CupertinoIcons.layers_fill, "Block", blockName, textColor, slateColor),
+              _buildInfoRow(
+                CupertinoIcons.layers_fill,
+                "Block",
+                blockName,
+                textColor,
+                slateColor,
+              ),
               _buildDivider(primaryColor),
-              _buildInfoRow(CupertinoIcons.bed_double_fill, "Room Number", roomNum, textColor, slateColor),
+              _buildInfoRow(
+                CupertinoIcons.bed_double_fill,
+                "Room Number",
+                roomNum,
+                textColor,
+                slateColor,
+              ),
             ], primaryColor),
+
+            const SizedBox(height: 32),
+
+            // NEW: Emergency & Medical Section
+            _buildSectionHeader("EMERGENCY & MEDICAL", Colors.redAccent),
+            _buildInfoCard([
+              _buildActionRow(
+                CupertinoIcons.heart_fill,
+                "Medical Profile",
+                "Update health & contact info",
+                textColor,
+                slateColor,
+                () {
+                  Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (_) => const MedicalDataEntryScreen(),
+                    ),
+                  );
+                },
+                iconColor: Colors.redAccent,
+              ),
+            ], Colors.redAccent),
 
             const SizedBox(height: 32),
 
             // Settings & Legal
             _buildSectionHeader("SETTINGS & LEGAL", primaryColor),
             _buildInfoCard([
-              _buildActionRow(CupertinoIcons.lock_shield_fill, "Reset Password", "Send reset link to email", textColor, slateColor, () {
-                _resetPassword(context, email);
-              }),
+              _buildActionRow(
+                CupertinoIcons.lock_shield_fill,
+                "Reset Password",
+                "Send reset link to email",
+                textColor,
+                slateColor,
+                () {
+                  _resetPassword(context, email);
+                },
+              ),
               _buildDivider(primaryColor),
-              _buildActionRow(CupertinoIcons.doc_text_fill, "Terms & Conditions", "Read our rules & policies", textColor, slateColor, () {
-                Navigator.push(context, CupertinoPageRoute(builder: (_) => const LegalDocumentScreen(isPrivacy: false)));
-              }),
+              _buildActionRow(
+                CupertinoIcons.doc_text_fill,
+                "Terms & Conditions",
+                "Read our rules & policies",
+                textColor,
+                slateColor,
+                () {
+                  Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (_) =>
+                          const LegalDocumentScreen(isPrivacy: false),
+                    ),
+                  );
+                },
+              ),
               _buildDivider(primaryColor),
-              _buildActionRow(CupertinoIcons.shield_fill, "Privacy Policy", "How we handle your data", textColor, slateColor, () {
-                Navigator.push(context, CupertinoPageRoute(builder: (_) => const LegalDocumentScreen(isPrivacy: true)));
-              }),
+              _buildActionRow(
+                CupertinoIcons.shield_fill,
+                "Privacy Policy",
+                "How we handle your data",
+                textColor,
+                slateColor,
+                () {
+                  Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (_) =>
+                          const LegalDocumentScreen(isPrivacy: true),
+                    ),
+                  );
+                },
+              ),
             ], primaryColor),
 
             const SizedBox(height: 32),
@@ -176,14 +292,19 @@ class StudentProfileScreen extends StatelessWidget {
                 icon: const Icon(CupertinoIcons.square_arrow_right),
                 label: const Text(
                   'SIGN OUT SECURELY',
-                  style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.withOpacity(0.1),
                   foregroundColor: Colors.redAccent,
                   elevation: 0,
                   side: BorderSide(color: Colors.red.withOpacity(0.3)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                 ),
               ),
             ),
@@ -193,14 +314,19 @@ class StudentProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionHeader(String title, Color primaryColor) {
+  Widget _buildSectionHeader(String title, Color color) {
     return Padding(
       padding: const EdgeInsets.only(left: 8, bottom: 12),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text(
           title,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: primaryColor, letterSpacing: 1.5),
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            color: color,
+            letterSpacing: 1.5,
+          ),
         ),
       ),
     );
@@ -217,7 +343,13 @@ class StudentProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value, Color textColor, Color slateColor) {
+  Widget _buildInfoRow(
+    IconData icon,
+    String label,
+    String value,
+    Color textColor,
+    Color slateColor,
+  ) {
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Row(
@@ -228,9 +360,23 @@ class StudentProfileScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: TextStyle(color: slateColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: slateColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(value, style: TextStyle(color: textColor, fontSize: 15, fontWeight: FontWeight.w800)),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ],
             ),
           ),
@@ -239,7 +385,15 @@ class StudentProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildActionRow(IconData icon, String title, String subtitle, Color textColor, Color slateColor, VoidCallback onTap) {
+  Widget _buildActionRow(
+    IconData icon,
+    String title,
+    String subtitle,
+    Color textColor,
+    Color slateColor,
+    VoidCallback onTap, {
+    Color? iconColor,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(24),
@@ -249,20 +403,41 @@ class StudentProfileScreen extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: textColor.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
-              child: Icon(icon, color: textColor, size: 20),
+              decoration: BoxDecoration(
+                color: (iconColor ?? textColor).withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: iconColor ?? textColor, size: 20),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
-               crossAxisAlignment: CrossAxisAlignment.start,
-               children: [
-                 Text(title, style: TextStyle(color: textColor, fontSize: 15, fontWeight: FontWeight.w900)),
-                 Text(subtitle, style: TextStyle(color: slateColor, fontSize: 11, fontWeight: FontWeight.bold)),
-               ],
-             ),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: slateColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            Icon(CupertinoIcons.chevron_right, color: slateColor.withOpacity(0.5), size: 18),
+            Icon(
+              CupertinoIcons.chevron_right,
+              color: slateColor.withOpacity(0.5),
+              size: 18,
+            ),
           ],
         ),
       ),
@@ -270,7 +445,12 @@ class StudentProfileScreen extends StatelessWidget {
   }
 
   Widget _buildDivider(Color primary) {
-    return Divider(height: 1, thickness: 1, color: primary.withOpacity(0.05), indent: 56);
+    return Divider(
+      height: 1,
+      thickness: 1,
+      color: primary.withOpacity(0.05),
+      indent: 56,
+    );
   }
 }
 
@@ -279,15 +459,14 @@ class StudentProfileScreen extends StatelessWidget {
 // ============================================================================
 class LegalDocumentScreen extends StatelessWidget {
   final bool isPrivacy;
-  
+
   const LegalDocumentScreen({super.key, required this.isPrivacy});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final title = isPrivacy ? "PRIVACY POLICY" : "TERMS & CONDITIONS";
-    
-    // Standard Boilerplate text so it works beautifully out of the box
+
     final content = isPrivacy ? _privacyText : _termsText;
 
     return Scaffold(

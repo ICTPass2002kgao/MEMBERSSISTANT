@@ -46,7 +46,7 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        _showStagingSheet(data); 
+        _showStagingSheet(data);
       } else if (response.statusCode == 404) {
         _showErrorSheet("Invalid or Fake QR Code Detected.");
       } else {
@@ -64,11 +64,12 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
   void _showStagingSheet(Map<String, dynamic> data) {
     final bool isActive = data['status'] == 'ACTIVE';
     final theme = Theme.of(context);
-    
+
     // Split the bundled items for clean display
-    final List<String> assetNames = (data['asset_name'] ?? 'Unknown Asset').split(' + ');
+    final List<String> assetNames = (data['asset_name'] ?? 'Unknown Asset')
+        .split(' + ');
     final List<String> assetNums = (data['asset_number'] ?? 'N/A').split(' + ');
-    
+
     final DateTime expiryDate = DateTime.parse(data['expires_at']).toLocal();
 
     showModalBottomSheet(
@@ -100,9 +101,14 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
-                      color: isActive ? Colors.green.withOpacity(0.1) : Colors.redAccent.withOpacity(0.1),
+                      color: isActive
+                          ? Colors.green.withOpacity(0.1)
+                          : Colors.redAccent.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -142,7 +148,7 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
                 ),
               ),
               const SizedBox(height: 8),
-              
+
               // Display the split bundle items
               Container(
                 width: double.infinity,
@@ -150,7 +156,9 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
                 decoration: BoxDecoration(
                   color: theme.colorScheme.onSurface.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: theme.colorScheme.onSurface.withOpacity(0.1)),
+                  border: Border.all(
+                    color: theme.colorScheme.onSurface.withOpacity(0.1),
+                  ),
                 ),
                 child: Column(
                   children: List.generate(assetNames.length, (i) {
@@ -160,15 +168,33 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(CupertinoIcons.device_laptop, size: 16, color: theme.colorScheme.primary),
+                          Icon(
+                            CupertinoIcons.device_laptop,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(assetNames[i], style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 14)),
+                                Text(
+                                  assetNames[i],
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
                                 if (sn != 'N/A')
-                                  Text("SN: $sn", style: TextStyle(color: theme.colorScheme.onSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+                                  Text(
+                                    "SN: $sn",
+                                    style: TextStyle(
+                                      color: theme.colorScheme.onSecondary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -221,7 +247,11 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
                   ),
                   child: const Row(
                     children: [
-                      Icon(CupertinoIcons.exclamationmark_triangle_fill, color: Colors.redAccent, size: 24),
+                      Icon(
+                        CupertinoIcons.exclamationmark_triangle_fill,
+                        color: Colors.redAccent,
+                        size: 24,
+                      ),
                       SizedBox(width: 12),
                       Expanded(
                         child: Text(

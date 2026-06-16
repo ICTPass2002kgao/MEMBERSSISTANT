@@ -6,11 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:mobile_app/components/api_class.dart';
 import 'package:mobile_app/security_screens/tabs/home_tab.dart';
 import 'package:mobile_app/security_screens/tabs/notifications.dart';
+import 'package:mobile_app/security_screens/tabs/verify_gate_pass.dart';
 import 'package:mobile_app/security_screens/tabs/verify_permit.dart';
 import 'package:mobile_app/auth/login.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
- 
 
 class SecurityDashboard extends StatefulWidget {
   const SecurityDashboard({super.key});
@@ -107,6 +107,7 @@ class _SecurityDashboardState extends State<SecurityDashboard> {
         onLogout: _handleLogout,
       ),
       const VerifyPermitTab(),
+      const VerifyGatePassTab(),
       const SecurityNotifications(),
     ];
 
@@ -126,17 +127,50 @@ class _SecurityDashboardState extends State<SecurityDashboard> {
               decoration: BoxDecoration(
                 color: bgColor.withOpacity(0.75),
                 borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: Colors.white.withOpacity(0.08), width: 1.5),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.08),
+                  width: 1.5,
+                ),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 30, offset: const Offset(0, 10)),
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
                 ],
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildNavItem(0, CupertinoIcons.shield_fill, 'Overview', primaryColor, slateColor),
-                  _buildNavItem(1, CupertinoIcons.qrcode_viewfinder, 'Scanner', primaryColor, slateColor),
-                  _buildNavItem(2, CupertinoIcons.bell_fill, 'Alerts', primaryColor, slateColor, badgeCount: _unreadCount),
+                  _buildNavItem(
+                    0,
+                    CupertinoIcons.shield_fill,
+                    'Overview',
+                    primaryColor,
+                    slateColor,
+                  ),
+                  _buildNavItem(
+                    1,
+                    CupertinoIcons.qrcode_viewfinder,
+                    'Scanner',
+                    primaryColor,
+                    slateColor,
+                  ),
+                  _buildNavItem(
+                    2,
+                    CupertinoIcons.qrcode_viewfinder,
+                    'Gate Pass Scanner',
+                    primaryColor,
+                    slateColor,
+                  ),
+                  _buildNavItem(
+                    3,
+                    CupertinoIcons.bell_fill,
+                    'Alerts',
+                    primaryColor,
+                    slateColor,
+                    badgeCount: _unreadCount,
+                  ),
                 ],
               ),
             ),
@@ -146,7 +180,14 @@ class _SecurityDashboardState extends State<SecurityDashboard> {
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, String label, Color primaryColor, Color slateColor, {int badgeCount = 0}) {
+  Widget _buildNavItem(
+    int index,
+    IconData icon,
+    String label,
+    Color primaryColor,
+    Color slateColor, {
+    int badgeCount = 0,
+  }) {
     final bool isSelected = _selectedIndex == index;
 
     return GestureDetector(
@@ -160,9 +201,14 @@ class _SecurityDashboardState extends State<SecurityDashboard> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutQuint,
-        padding: EdgeInsets.symmetric(horizontal: isSelected ? 20.0 : 12.0, vertical: 12.0),
+        padding: EdgeInsets.symmetric(
+          horizontal: isSelected ? 20.0 : 12.0,
+          vertical: 12.0,
+        ),
         decoration: BoxDecoration(
-          color: isSelected ? primaryColor.withOpacity(0.15) : Colors.transparent,
+          color: isSelected
+              ? primaryColor.withOpacity(0.15)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(24),
         ),
         child: Row(
@@ -171,15 +217,31 @@ class _SecurityDashboardState extends State<SecurityDashboard> {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                Icon(icon, color: isSelected ? primaryColor : slateColor.withOpacity(0.4), size: 24),
+                Icon(
+                  icon,
+                  color: isSelected
+                      ? primaryColor
+                      : slateColor.withOpacity(0.4),
+                  size: 24,
+                ),
                 if (badgeCount > 0)
                   Positioned(
                     right: -4,
                     top: -4,
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                      child: Text(badgeCount > 9 ? '9+' : badgeCount.toString(), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        badgeCount > 9 ? '9+' : badgeCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
               ],
@@ -195,7 +257,12 @@ class _SecurityDashboardState extends State<SecurityDashboard> {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.clip,
-                    style: TextStyle(color: primaryColor, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5),
+                    style: TextStyle(
+                      color: primaryColor,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),

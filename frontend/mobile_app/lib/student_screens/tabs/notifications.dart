@@ -27,16 +27,17 @@ class _NotificationsState extends State<Notifications> {
   void initState() {
     super.initState();
     _fetchNotifications();
- 
-    _notificationSubscription = PushNotificationService().onMessageStream.listen((message) {
-      if (mounted) {
-        _fetchNotifications();
-      }
-    });
+
+    _notificationSubscription = PushNotificationService().onMessageStream
+        .listen((message) {
+          if (mounted) {
+            _fetchNotifications();
+          }
+        });
   }
 
   @override
-  void dispose() { 
+  void dispose() {
     _notificationSubscription?.cancel();
     super.dispose();
   }
@@ -130,38 +131,40 @@ class _NotificationsState extends State<Notifications> {
     final slateColor = theme.colorScheme.onSecondary;
     final textColor = theme.colorScheme.onSurface;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "ALERTS",
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  color: primaryColor,
-                  letterSpacing: 2.0,
+    return SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "ALERTS",
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: primaryColor,
+                    letterSpacing: 2.0,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Transmissions',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w900,
-                  color: textColor,
-                  letterSpacing: -0.5,
+                const SizedBox(height: 8),
+                Text(
+                  'Transmissions',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                    color: textColor,
+                    letterSpacing: -0.5,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Expanded(child: _buildBody(primaryColor, slateColor, textColor)),
-      ],
+          Expanded(child: _buildBody(primaryColor, slateColor, textColor)),
+        ],
+      ),
     );
   }
 
@@ -188,7 +191,7 @@ class _NotificationsState extends State<Notifications> {
           final n = _notifications[index];
           final bool isRead = n['is_read'] ?? false;
           final bool isExpanded = _expandedIndices.contains(index);
-          
+
           final bool isDirect = n['target_audience'] == 'personal';
 
           return GestureDetector(

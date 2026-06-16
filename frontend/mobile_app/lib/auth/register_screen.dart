@@ -171,7 +171,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    if (idNumber.length < 6) {
+    if (idNumber.length != 13) {
       _showError('Please provide a valid Identification Number.');
       return;
     }
@@ -190,9 +190,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       request.fields['id_number'] = idNumber;
       request.fields['password'] = password;
       request.fields['gender'] = _selectedGender; // Send Gender
-      if (phone.isNotEmpty) {
-        request.fields['phone'] = phone; // Send Phone if provided
-      }
+      request.fields['phone'] = phone; // Send Phone if provided
+  
 
       if (_idDocument != null) {
         request.files.add(

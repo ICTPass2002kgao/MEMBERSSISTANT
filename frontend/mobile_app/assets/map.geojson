@@ -1,0 +1,665 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Tsalanang G",
+                "marker-color": "#312E81"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.866129,
+                    -26.715188
+                ]
+            },
+            "bbox": [
+                27.866129,
+                -26.715188,
+                27.866129,
+                -26.715188
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Tsalanang F",
+                "marker-color": "#312E81"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.866117,
+                    -26.715365
+                ]
+            },
+            "bbox": [
+                27.866117,
+                -26.715365,
+                27.866117,
+                -26.715365
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.866454,
+                    -26.71532
+                ]
+            },
+            "bbox": [
+                27.866454,
+                -26.71532,
+                27.866454,
+                -26.71532
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Tsalanang D",
+                "marker-color": "#312E81"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.866156,
+                    -26.715586
+                ]
+            },
+            "bbox": [
+                27.866156,
+                -26.715586,
+                27.866156,
+                -26.715586
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Leseding E",
+                "marker-color": "#312E81"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.865808,
+                    -26.715458
+                ]
+            },
+            "bbox": [
+                27.865808,
+                -26.715458,
+                27.865808,
+                -26.715458
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Student Town Laundry ",
+                "marker-symbol": "laundry",
+                "marker-size": "large"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.866671,
+                    -26.715819
+                ]
+            },
+            "bbox": [
+                27.866671,
+                -26.715819,
+                27.866671,
+                -26.715819
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Vut Main res Gym",
+                "marker-color": "rgba(34, 34, 227, 1)",
+                "marker-symbol": "fitness-centre",
+                "marker-size": "large"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.866418,
+                    -26.71565
+                ]
+            },
+            "bbox": [
+                27.866418,
+                -26.71565,
+                27.866418,
+                -26.71565
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Lethabong M"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.867029,
+                    -26.715623
+                ]
+            },
+            "bbox": [
+                27.867029,
+                -26.715623,
+                27.867029,
+                -26.715623
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": ""
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.867072,
+                    -26.715809
+                ]
+            },
+            "bbox": [
+                27.867072,
+                -26.715809,
+                27.867072,
+                -26.715809
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Lethabong L"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.867075,
+                    -26.715972
+                ]
+            },
+            "bbox": [
+                27.867075,
+                -26.715972,
+                27.867075,
+                -26.715972
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Leseding A",
+                "marker-color": "#312E81"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.865982,
+                    -26.715822
+                ]
+            },
+            "bbox": [
+                27.865982,
+                -26.715822,
+                27.865982,
+                -26.715822
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Leseding B",
+                "marker-color": "#312E81"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.865654,
+                    -26.71584
+                ]
+            },
+            "bbox": [
+                27.865654,
+                -26.71584,
+                27.865654,
+                -26.71584
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Leseding C",
+                "marker-color": "#312E81"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.865667,
+                    -26.715647
+                ]
+            },
+            "bbox": [
+                27.865667,
+                -26.715647,
+                27.865667,
+                -26.715647
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Placement Office",
+                "marker-symbol": "home",
+                "marker-size": "large"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.86461,
+                    -26.716297
+                ]
+            },
+            "bbox": [
+                27.86461,
+                -26.716297,
+                27.86461,
+                -26.716297
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Student Town Matron",
+                "marker-color": "#312E81",
+                "marker-size": "large",
+                "marker-symbol": "commercial"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.86673,
+                    -26.715923
+                ]
+            },
+            "bbox": [
+                27.86673,
+                -26.715923,
+                27.86673,
+                -26.715923
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            27.865453,
+                            -26.716058
+                        ],
+                        [
+                            27.865453,
+                            -26.716058
+                        ],
+                        [
+                            27.865453,
+                            -26.716058
+                        ],
+                        [
+                            27.865453,
+                            -26.716058
+                        ]
+                    ]
+                ]
+            },
+            "bbox": [
+                27.865453,
+                -26.716058,
+                27.865453,
+                -26.716058
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Main res Basket Ball Court",
+                "fill-opacity": 0.5,
+                "fill": "rgba(222, 195, 220, 1)"
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            27.865466,
+                            -26.716058
+                        ],
+                        [
+                            27.865466,
+                            -26.716626
+                        ],
+                        [
+                            27.866392,
+                            -26.716626
+                        ],
+                        [
+                            27.866392,
+                            -26.716058
+                        ],
+                        [
+                            27.865466,
+                            -26.716058
+                        ]
+                    ]
+                ]
+            },
+            "bbox": [
+                27.865466,
+                -26.716626,
+                27.866392,
+                -26.716058
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Vut Main res Tennis court",
+                "stroke": "#312E81",
+                "fill-opacity": 0.3
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            27.863297,
+                            -26.715395
+                        ],
+                        [
+                            27.863297,
+                            -26.715754
+                        ],
+                        [
+                            27.863894,
+                            -26.715754
+                        ],
+                        [
+                            27.863894,
+                            -26.715395
+                        ],
+                        [
+                            27.863297,
+                            -26.715395
+                        ]
+                    ]
+                ]
+            },
+            "bbox": [
+                27.863297,
+                -26.715754,
+                27.863894,
+                -26.715395
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Vut Chapel",
+                "marker-symbol": "religious-christian",
+                "marker-size": "large",
+                "marker-color": "#312E81"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.865702,
+                    -26.714708
+                ]
+            },
+            "bbox": [
+                27.865702,
+                -26.714708,
+                27.865702,
+                -26.714708
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Main Res Lapa"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.865465,
+                    -26.714222
+                ]
+            },
+            "bbox": [
+                27.865465,
+                -26.714222,
+                27.865465,
+                -26.714222
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Vut Cafeteria",
+                "marker-symbol": "fast-food",
+                "marker-size": "large"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.864863,
+                    -26.716629
+                ]
+            },
+            "bbox": [
+                27.864863,
+                -26.716629,
+                27.864863,
+                -26.716629
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Vut res soccer field",
+                "stroke": "#312E81",
+                "stroke-opacity": 1
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [
+                        27.862851,
+                        -26.714086
+                    ],
+                    [
+                        27.862591,
+                        -26.713614
+                    ],
+                    [
+                        27.86295,
+                        -26.713587
+                    ],
+                    [
+                        27.863319,
+                        -26.713632
+                    ],
+                    [
+                        27.863549,
+                        -26.714157
+                    ],
+                    [
+                        27.863708,
+                        -26.71438
+                    ],
+                    [
+                        27.863838,
+                        -26.714727
+                    ],
+                    [
+                        27.863918,
+                        -26.714995
+                    ],
+                    [
+                        27.863698,
+                        -26.715155
+                    ],
+                    [
+                        27.863429,
+                        -26.715182
+                    ],
+                    [
+                        27.863299,
+                        -26.715128
+                    ],
+                    [
+                        27.86319,
+                        -26.714932
+                    ],
+                    [
+                        27.86304,
+                        -26.714576
+                    ],
+                    [
+                        27.86296,
+                        -26.714318
+                    ],
+                    [
+                        27.862861,
+                        -26.714104
+                    ],
+                    [
+                        27.862761,
+                        -26.713908
+                    ],
+                    [
+                        27.862731,
+                        -26.713952
+                    ]
+                ]
+            },
+            "bbox": [
+                27.862591,
+                -26.715182,
+                27.863918,
+                -26.713587
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Student Town soccer field",
+                "stroke-width": 4
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [
+                        27.867454,
+                        -26.71622
+                    ],
+                    [
+                        27.867581,
+                        -26.716258
+                    ],
+                    [
+                        27.867678,
+                        -26.716266
+                    ],
+                    [
+                        27.86776,
+                        -26.716262
+                    ],
+                    [
+                        27.867831,
+                        -26.716233
+                    ],
+                    [
+                        27.867918,
+                        -26.716181
+                    ],
+                    [
+                        27.867874,
+                        -26.715987
+                    ],
+                    [
+                        27.867758,
+                        -26.715897
+                    ],
+                    [
+                        27.867613,
+                        -26.715858
+                    ],
+                    [
+                        27.86741,
+                        -26.715884
+                    ],
+                    [
+                        27.867367,
+                        -26.715922
+                    ],
+                    [
+                        27.867352,
+                        -26.716013
+                    ],
+                    [
+                        27.86737,
+                        -26.716126
+                    ],
+                    [
+                        27.867453,
+                        -26.716217
+                    ]
+                ]
+            },
+            "bbox": [
+                27.867352,
+                -26.716266,
+                27.867918,
+                -26.715858
+            ]
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "marker-size": "large",
+                "marker-symbol": "laundry",
+                "marker-color": "#312E81",
+                "name": "Dinaleding Res Laundry "
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    27.865917,
+                    -26.717674
+                ]
+            },
+            "bbox": [
+                27.865917,
+                -26.717674,
+                27.865917,
+                -26.717674
+            ]
+        }
+    ]
+}

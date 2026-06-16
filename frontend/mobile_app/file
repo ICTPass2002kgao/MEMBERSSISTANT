@@ -1,0 +1,2795 @@
+import 'dart:convert';
+
+import 'dart:ui';
+
+import 'package:flutter/cupertino.dart';
+
+import 'package:flutter/material.dart';
+
+import 'package:http/http.dart' as http;
+
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+
+import 'package:mobile_app/components/api_class.dart';
+
+import 'package:geolocator/geolocator.dart' as geo;
+
+
+
+class CampusMapTab extends StatefulWidget {final double? targetLat; // NEW
+
+  final double? targetLng; // NEW
+
+
+
+  const CampusMapTab({super.key, this.targetLat, this.targetLng});
+
+
+
+  @override
+
+  State<CampusMapTab> createState() => _CampusMapTabState();
+
+}
+
+
+
+class _CampusMapTabState extends State<CampusMapTab> {
+
+  MapboxMap? _mapboxMap;
+
+  CircleAnnotationManager? _circleAnnotationManager;
+
+  PolylineAnnotationManager?
+
+  _polylineAnnotationManager; // NEW: For drawing routes
+
+
+
+  List<dynamic> _campusLocations = [];
+
+  List<dynamic> _displayedLocations = [];
+
+  geo.Position? _currentUserLocation;
+
+  bool _isSearching = false;
+
+  bool _isLoading = true;
+
+  bool _isFetchingRoute = false;
+
+
+
+  final TextEditingController _searchController = TextEditingController();
+
+
+
+  // IMPORTANT: Paste your Mapbox Public Access Token here for the Directions API
+
+  final String _mapboxAccessToken = "YOUR_MAPBOX_PUBLIC_ACCESS_TOKEN_HERE";
+
+
+
+  final String customStyleUrl =
+
+      "mapbox://styles/kgaogelo-2026/cmqekderb000n01scbhfo3y61";
+
+
+
+  @override
+
+  void initState() {
+
+    super.initState();
+
+    _initializeApp();
+
+  }
+
+
+
+  @override
+
+  void dispose() {
+
+    _searchController.dispose();
+
+    super.dispose();
+
+  }
+
+
+
+  Future<void> _initializeApp() async {
+
+    await _fetchCampusLocations();
+
+    await _getUserCurrentLocation();
+
+  }
+
+
+
+  Future<void> _getUserCurrentLocation() async {
+
+    try {
+
+      bool serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) return;
+
+
+
+      geo.LocationPermission permission =
+
+          await geo.Geolocator.checkPermission();
+
+      if (permission == geo.LocationPermission.denied) {
+
+        permission = await geo.Geolocator.requestPermission();
+
+        if (permission == geo.LocationPermission.denied ||
+
+            permission == geo.LocationPermission.deniedForever) {
+
+          return;
+
+        }
+
+      }
+
+
+
+      final geo.Position position = await geo.Geolocator.getCurrentPosition(
+
+        desiredAccuracy: geo.LocationAccuracy.high,
+
+      );
+
+
+
+      if (mounted) {
+
+        setState(() {
+
+          _currentUserLocation = position;
+
+        });
+
+        _calculateNearestPlaces();
+
+      }
+
+    } catch (e) {
+
+      debugPrint("Silent location fetch failed: $e");
+
+    }
+
+  }
+
+
+
+  void _calculateNearestPlaces() {
+
+    if (_currentUserLocation == null || _campusLocations.isEmpty) return;
+
+
+
+    List<dynamic> sortedLocations = List.from(_campusLocations);
+
+
+
+    sortedLocations.sort((a, b) {
+
+      double distA = geo.Geolocator.distanceBetween(
+
+        _currentUserLocation!.latitude,
+
+        _currentUserLocation!.longitude,
+
+        a['latitude'],
+
+        a['longitude'],
+
+      );
+
+      double distB = geo.Geolocator.distanceBetween(
+
+        _currentUserLocation!.latitude,
+
+        _currentUserLocation!.longitude,
+
+        b['latitude'],
+
+        b['longitude'],
+
+      );
+
+      return distA.compareTo(distB);
+
+    });
+
+
+
+    setState(() {
+
+      _displayedLocations = sortedLocations.take(5).toList();
+
+      _isSearching = false;
+
+    });
+
+  }
+
+
+
+  void _filterPlaces(String query) {
+
+    if (query.isEmpty) {
+
+      _calculateNearestPlaces();
+
+      _polylineAnnotationManager
+
+          ?.deleteAll(); // Clear route when clearing search
+
+      return;
+
+    }
+
+
+
+    setState(() {
+
+      _isSearching = true;
+
+      _displayedLocations = _campusLocations.where((loc) {
+
+        final name = (loc['name'] ?? '').toString().toLowerCase();
+
+        return name.contains(query.toLowerCase());
+
+      }).toList();
+
+    });
+
+  }
+
+
+
+  void _flyToLocation(double lat, double lng) {
+
+    _mapboxMap?.setCamera(
+
+      CameraOptions(
+
+        center: Point(coordinates: Position(lng, lat)),
+
+        zoom: 17.5,
+
+        pitch: 60.0,
+
+        bearing: 0.0,
+
+      ),
+
+    );
+
+    FocusScope.of(context).unfocus();
+
+  }
+
+
+
+  // --- NEW: FETCH AND DRAW ROUTE FROM MAPBOX DIRECTIONS API ---
+
+  Future<void> _drawRoute(double destLat, double destLng) async {
+
+    if (_currentUserLocation == null) {
+
+      ScaffoldMessenger.of(context).showSnackBar(
+
+        const SnackBar(
+
+          content: Text(
+
+            'Cannot calculate route without your current location.',
+
+          ),
+
+        ),
+
+      );
+
+      return;
+
+    }
+
+
+
+    if (_mapboxAccessToken == "YOUR_MAPBOX_PUBLIC_ACCESS_TOKEN_HERE") {
+
+      debugPrint("ERROR: You must set your Mapbox Access Token in the code.");
+
+      return;
+
+    }
+
+
+
+    setState(() => _isFetchingRoute = true);
+
+
+
+    final startLat = _currentUserLocation!.latitude;
+
+    final startLng = _currentUserLocation!.longitude;
+
+
+
+    final url = Uri.parse(
+
+      'https://api.mapbox.com/directions/v5/mapbox/walking/$startLng,$startLat;$destLng,$destLat?geometries=geojson&access_token=${ApiClass.mapboxToken}',
+
+    );
+
+    try {
+
+      final response = await http.get(url);
+
+
+
+      if (response.statusCode == 200) {
+
+        final data = jsonDecode(response.body);
+
+        final routes = data['routes'];
+
+
+
+        if (routes != null && routes.isNotEmpty) {
+
+          final geometry = routes[0]['geometry'];
+
+          final coordinates = geometry['coordinates'] as List;
+
+
+
+          List<Position> routePoints = coordinates.map((coord) {
+
+            // Mapbox API returns [longitude, latitude]
+
+            return Position(coord[0], coord[1]);
+
+          }).toList();
+
+
+
+          // Clear any existing routes first
+
+          await _polylineAnnotationManager?.deleteAll();
+
+
+
+          // Draw the new line
+
+          _polylineAnnotationManager?.create(
+
+            PolylineAnnotationOptions(
+
+              geometry: LineString(coordinates: routePoints),
+
+              lineColor: Colors.blueAccent.value,
+
+              lineWidth: 6.0,
+
+              lineOpacity: 0.8,
+
+              lineJoin: LineJoin.ROUND,
+
+            ),
+
+          );
+
+        }
+
+      } else {
+
+        debugPrint("Mapbox Directions API failed: ${response.body}");
+
+      }
+
+    } catch (e) {
+
+      debugPrint("Failed to fetch directions: $e");
+
+    } finally {
+
+      if (mounted) {
+
+        setState(() => _isFetchingRoute = false);
+
+      }
+
+    }
+
+  }
+
+
+
+  // Helper to handle a location selection (fly + route)
+
+  void _handleLocationSelection(double lat, double lng) {
+
+    _flyToLocation(lat, lng);
+
+    _drawRoute(lat, lng);
+
+  }
+
+
+
+  Future<void> _fetchCampusLocations() async {
+
+    try {
+
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) return;
+
+      final idToken = await user.getIdToken();
+
+
+
+      final response = await http.get(
+
+        Uri.parse('${ApiClass().getApiBaseUrl()}/campus-locations/'),
+
+        headers: {
+
+          'Content-Type': 'application/json',
+
+          'Authorization': 'Bearer $idToken',
+
+        },
+
+      );
+
+
+
+      if (mounted && response.statusCode == 200) {
+
+        final data = jsonDecode(response.body);
+
+        setState(() {
+
+          _campusLocations = data is List ? data : (data['results'] ?? []);
+
+          _displayedLocations = List.from(_campusLocations);
+
+          _isLoading = false;
+
+        });
+
+
+
+        if (_mapboxMap != null) {
+
+          _drawMapPins();
+
+        }
+
+      }
+
+    } catch (e) {
+
+      debugPrint("Failed to load campus locations: $e");
+
+      if (mounted) setState(() => _isLoading = false);
+
+    }
+
+  }
+
+void _onMapCreated(MapboxMap mapboxMap) async {
+
+    _mapboxMap = mapboxMap;
+
+
+
+    await mapboxMap.location.updateSettings(
+
+      LocationComponentSettings(enabled: true, pulsingEnabled: true),
+
+    );
+
+
+
+    _circleAnnotationManager = await mapboxMap.annotations.createCircleAnnotationManager();
+
+    _polylineAnnotationManager = await mapboxMap.annotations.createPolylineAnnotationManager();
+
+
+
+    if (_campusLocations.isNotEmpty) {
+
+      _drawMapPins();
+
+    }
+
+
+
+    // --- NEW: AUTO-ROUTE IF TARGET COORDINATES WERE PASSED ---
+
+    if (widget.targetLat != null && widget.targetLng != null) {
+
+      // Small delay to ensure the map and location are fully hydrated
+
+      Future.delayed(const Duration(milliseconds: 500), () {
+
+        _handleLocationSelection(widget.targetLat!, widget.targetLng!);
+
+      });
+
+    }
+
+  }
+
+
+
+  void _drawMapPins() {
+
+    if (_circleAnnotationManager == null || _campusLocations.isEmpty) return;
+
+
+
+    List<CircleAnnotationOptions> options = [];
+
+
+
+    for (var loc in _campusLocations) {
+
+      final double lat = loc['latitude'];
+
+      final double lng = loc['longitude'];
+
+
+
+      options.add(
+
+        CircleAnnotationOptions(
+
+          geometry: Point(coordinates: Position(lng, lat)),
+
+          circleRadius: 8.0,
+
+          circleColor: Colors.blueAccent.value,
+
+          circleStrokeWidth: 2.0,
+
+          circleStrokeColor: Colors.white.value,
+
+        ),
+
+      );
+
+    }
+
+
+
+    _circleAnnotationManager?.createMulti(options);
+
+  }
+
+
+
+  @override
+
+  Widget build(BuildContext context) {
+
+    return Scaffold(
+
+      backgroundColor: const Color(0xFF0B101E),
+
+      body: Stack(
+
+        children: [
+
+          MapWidget(
+
+            key: const ValueKey("campus_mapbox"),
+
+            styleUri: customStyleUrl,
+
+            viewport: CameraViewportState(
+
+              center: Point(coordinates: Position(27.866326, -26.716744)),
+
+              zoom: 12,
+
+            ),
+
+            onMapCreated: _onMapCreated,
+
+          ),
+
+
+
+          // Glassmorphism Search Bar
+
+          Positioned(
+
+            top: 50,
+
+            left: 24,
+
+            right: 24,
+
+            child: ClipRRect(
+
+              borderRadius: BorderRadius.circular(24),
+
+              child: BackdropFilter(
+
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+
+                child: Container(
+
+                  height: 60,
+
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+
+                  decoration: BoxDecoration(
+
+                    color: Colors.black.withOpacity(0.4),
+
+                    borderRadius: BorderRadius.circular(24),
+
+                    border: Border.all(
+
+                      color: Colors.white.withOpacity(0.2),
+
+                      width: 1.0,
+
+                    ),
+
+                    boxShadow: [
+
+                      BoxShadow(
+
+                        color: Colors.black.withOpacity(0.2),
+
+                        blurRadius: 20,
+
+                        offset: const Offset(0, 10),
+
+                      ),
+
+                    ],
+
+                  ),
+
+                  child: Row(
+
+                    children: [
+
+                      GestureDetector(
+
+                        onTap: () => Navigator.pop(context),
+
+                        child: const Icon(
+
+                          CupertinoIcons.arrow_left,
+
+                          color: Colors.white,
+
+                        ),
+
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      const Icon(CupertinoIcons.search, color: Colors.white54),
+
+                      const SizedBox(width: 12),
+
+                      Expanded(
+
+                        child: TextField(
+
+                          controller: _searchController,
+
+                          onChanged: _filterPlaces,
+
+                          style: const TextStyle(
+
+                            color: Colors.white,
+
+                            fontWeight: FontWeight.w600,
+
+                          ),
+
+                          decoration: InputDecoration(
+
+                            hintText: _isLoading
+
+                                ? "Loading campus data..."
+
+                                : "Search VUT buildings...",
+
+                            hintStyle: TextStyle(
+
+                              color: Colors.white.withOpacity(0.5),
+
+                              fontWeight: FontWeight.w600,
+
+                            ),
+
+                            border: InputBorder.none,
+
+                            isDense: true,
+
+                            contentPadding: EdgeInsets.zero,
+
+                          ),
+
+                        ),
+
+                      ),
+
+                      if (_searchController.text.isNotEmpty)
+
+                        GestureDetector(
+
+                          onTap: () {
+
+                            _searchController.clear();
+
+                            _filterPlaces('');
+
+                            FocusScope.of(context).unfocus();
+
+                          },
+
+                          child: const Icon(
+
+                            CupertinoIcons.clear_thick_circled,
+
+                            color: Colors.white54,
+
+                            size: 20,
+
+                          ),
+
+                        ),
+
+                    ],
+
+                  ),
+
+                ),
+
+              ),
+
+            ),
+
+          ),
+
+
+
+          // Glassmorphism Bottom Sheet
+
+          Positioned(
+
+            bottom: 0,
+
+            left: 0,
+
+            right: 0,
+
+            child: ClipRRect(
+
+              borderRadius: const BorderRadius.only(
+
+                topLeft: Radius.circular(32),
+
+                topRight: Radius.circular(32),
+
+              ),
+
+              child: BackdropFilter(
+
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+
+                child: Container(
+
+                  height: 280,
+
+                  decoration: BoxDecoration(
+
+                    color: Colors.black.withOpacity(0.55),
+
+                    borderRadius: const BorderRadius.only(
+
+                      topLeft: Radius.circular(32),
+
+                      topRight: Radius.circular(32),
+
+                    ),
+
+                    border: Border.all(
+
+                      color: Colors.white.withOpacity(0.15),
+
+                      width: 1.0,
+
+                    ),
+
+                    boxShadow: [
+
+                      BoxShadow(
+
+                        color: Colors.black.withOpacity(0.4),
+
+                        blurRadius: 30,
+
+                        offset: const Offset(0, -10),
+
+                      ),
+
+                    ],
+
+                  ),
+
+                  child: Column(
+
+                    crossAxisAlignment: CrossAxisAlignment.start,
+
+                    children: [
+
+                      Center(
+
+                        child: Container(
+
+                          margin: const EdgeInsets.only(top: 12, bottom: 8),
+
+                          height: 5,
+
+                          width: 48,
+
+                          decoration: BoxDecoration(
+
+                            color: Colors.white.withOpacity(0.3),
+
+                            borderRadius: BorderRadius.circular(4),
+
+                          ),
+
+                        ),
+
+                      ),
+
+                      Padding(
+
+                        padding: const EdgeInsets.symmetric(
+
+                          horizontal: 24.0,
+
+                          vertical: 8.0,
+
+                        ),
+
+                        child: Row(
+
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                          children: [
+
+                            Text(
+
+                              _isSearching
+
+                                  ? "Search Results"
+
+                                  : "Top 5 Nearest Places",
+
+                              style: const TextStyle(
+
+                                color: Colors.white,
+
+                                fontSize: 17,
+
+                                fontWeight: FontWeight.bold,
+
+                                letterSpacing: 0.5,
+
+                              ),
+
+                            ),
+
+                            if (_isFetchingRoute)
+
+                              const SizedBox(
+
+                                height: 16,
+
+                                width: 16,
+
+                                child: CircularProgressIndicator(
+
+                                  color: Colors.blueAccent,
+
+                                  strokeWidth: 2,
+
+                                ),
+
+                              ),
+
+                          ],
+
+                        ),
+
+                      ),
+
+                      Expanded(
+
+                        child: _isLoading
+
+                            ? const Center(
+
+                                child: CircularProgressIndicator(
+
+                                  color: Colors.blueAccent,
+
+                                ),
+
+                              )
+
+                            : _displayedLocations.isEmpty
+
+                            ? Center(
+
+                                child: Text(
+
+                                  "No locations found.",
+
+                                  style: TextStyle(
+
+                                    color: Colors.white.withOpacity(0.5),
+
+                                  ),
+
+                                ),
+
+                              )
+
+                            : ListView.separated(
+
+                                padding: const EdgeInsets.only(
+
+                                  top: 0,
+
+                                  bottom: 20,
+
+                                ),
+
+                                itemCount: _displayedLocations.length,
+
+                                separatorBuilder: (context, index) => Divider(
+
+                                  color: Colors.white.withOpacity(0.1),
+
+                                  height: 1,
+
+                                  indent: 72,
+
+                                ),
+
+                                itemBuilder: (context, index) {
+
+                                  final loc = _displayedLocations[index];
+
+                                  return ListTile(
+
+                                    contentPadding: const EdgeInsets.symmetric(
+
+                                      horizontal: 24,
+
+                                      vertical: 4,
+
+                                    ),
+
+                                    leading: Container(
+
+                                      padding: const EdgeInsets.all(10),
+
+                                      decoration: BoxDecoration(
+
+                                        color: Colors.blueAccent.withOpacity(
+
+                                          0.2,
+
+                                        ),
+
+                                        shape: BoxShape.circle,
+
+                                        border: Border.all(
+
+                                          color: Colors.blueAccent.withOpacity(
+
+                                            0.5,
+
+                                          ),
+
+                                        ),
+
+                                      ),
+
+                                      child: const Icon(
+
+                                        CupertinoIcons.location_solid,
+
+                                        color: Colors.blueAccent,
+
+                                        size: 20,
+
+                                      ),
+
+                                    ),
+
+                                    title: Text(
+
+                                      loc['name'] ?? 'Unknown Building',
+
+                                      style: const TextStyle(
+
+                                        color: Colors.white,
+
+                                        fontWeight: FontWeight.w600,
+
+                                        fontSize: 15,
+
+                                      ),
+
+                                    ),
+
+                                    subtitle:
+
+                                        _isSearching == false &&
+
+                                            _currentUserLocation != null
+
+                                        ? Text(
+
+                                            "${(geo.Geolocator.distanceBetween(_currentUserLocation!.latitude, _currentUserLocation!.longitude, loc['latitude'], loc['longitude']) / 1000).toStringAsFixed(2)} km away",
+
+                                            style: TextStyle(
+
+                                              color: Colors.white.withOpacity(
+
+                                                0.5,
+
+                                              ),
+
+                                              fontSize: 13,
+
+                                            ),
+
+                                          )
+
+                                        : null,
+
+                                    trailing: const Icon(
+
+                                      CupertinoIcons.arrow_turn_up_right,
+
+                                      color: Colors.blueAccent,
+
+                                      size: 18,
+
+                                    ),
+
+                                    onTap: () => _handleLocationSelection(
+
+                                      loc['latitude'],
+
+                                      loc['longitude'],
+
+                                    ),
+
+                                  );
+
+                                },
+
+                              ),
+
+                      ),
+
+                    ],
+
+                  ),
+
+                ),
+
+              ),
+
+            ),
+
+          ),
+
+        ],
+
+      ),
+
+    );
+
+  }
+
+}
+
+
+
+"use client";
+
+
+
+import React, { useState, useEffect, useMemo } from 'react';
+
+import { 
+
+  Activity, Loader2, Search, X, 
+
+  ShieldAlert, Clock, User, Fingerprint, MapPin
+
+} from 'lucide-react';
+
+import { apiFetch } from '../../components/api'; 
+
+import { SectionHeader } from '../../components/SharedUI'; 
+
+
+
+export default function EmergencyLogsPage() {
+
+    const [logs, setLogs] = useState<any[]>([]);
+
+    const [loading, setLoading] = useState(true);
+
+    const [searchTerm, setSearchTerm] = useState("");
+
+
+
+    const fetchLogs = async () => {
+
+        setLoading(true);
+
+        try {
+
+            // Fetching the permanent audit logs strictly from the Django backend
+
+            const response = await apiFetch(`/emergency-access-logs/`);
+
+            let fetchedLogs = response.results || response || [];
+
+            
+
+            // Sort by newest first to ensure the latest audits are at the top
+
+            fetchedLogs.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+            
+
+            setLogs(fetchedLogs);
+
+        } catch (error) { 
+
+            console.error("Audit Log Fetch Error:", error); 
+
+        } finally { 
+
+            setLoading(false); 
+
+        }
+
+    };
+
+
+
+    useEffect(() => { 
+
+        fetchLogs(); 
+
+        const interval = setInterval(fetchLogs, 30000); // Live sync every 30 seconds
+
+        return () => clearInterval(interval);
+
+    }, []);
+
+
+
+    const filteredLogs = useMemo(() => {
+
+        return logs.filter(log => {
+
+            if (!searchTerm) return true;
+
+            const searchLower = searchTerm.toLowerCase();
+
+            return (
+
+                (log.student_number && log.student_number.toLowerCase().includes(searchLower)) ||
+
+                (log.student_name && log.student_name.toLowerCase().includes(searchLower)) ||
+
+                (log.accessed_by_uid && log.accessed_by_uid.toLowerCase().includes(searchLower))
+
+            );
+
+        });
+
+    }, [logs, searchTerm]);
+
+
+
+    // Format ISO date to readable string matching South African locale standard
+
+    const formatDate = (dateString: string) => {
+
+        const date = new Date(dateString);
+
+        return new Intl.DateTimeFormat('en-ZA', {
+
+            year: 'numeric', month: 'short', day: 'numeric',
+
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+
+        }).format(date);
+
+    };
+
+
+
+    return (
+
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+
+                <div>
+
+                    <SectionHeader title="Emergency Audit Logs" />
+
+                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">
+
+                        Total Recorded Access Events: {filteredLogs.length}
+
+                    </p>
+
+                </div>
+
+            </div>
+
+
+
+            {/* POPIA Compliance Warning Banner */}
+
+            <div className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-start gap-4 shadow-sm">
+
+                <ShieldAlert className="text-red-500 shrink-0 mt-0.5" size={20} />
+
+                <div>
+
+                    <h3 className="text-red-700 text-xs font-black uppercase tracking-widest">Strict Confidentiality Audit</h3>
+
+                    <p className="text-red-600/80 text-sm font-medium mt-1">
+
+                        This table represents the immutable POPIA compliance log. It records every instance where medical biometrics were used to unlock a student's restricted health profile. These records cannot be altered or deleted.
+
+                    </p>
+
+                </div>
+
+            </div>
+
+
+
+            {/* Search Engine */}
+
+            <div className="bg-white border border-slate-200 p-6 rounded-[28px] shadow-sm space-y-4">
+
+                <div className="flex flex-col lg:flex-row gap-4">
+
+                    <div className="relative flex-1">
+
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+
+                        <input 
+
+                            type="text"
+
+                            placeholder="Search by Student ID, Name, or Responder UID..."
+
+                            value={searchTerm}
+
+                            onChange={(e) => setSearchTerm(e.target.value)}
+
+                            className="w-full bg-slate-50 border border-slate-200 pl-12 pr-4 py-3.5 rounded-2xl text-sm outline-none focus:bg-white focus:border-red-400 focus:ring-4 focus:ring-red-50 transition-all font-medium text-slate-700 placeholder-slate-400"
+
+                        />
+
+                    </div>
+
+                    <button onClick={() => setSearchTerm("")} className="p-3 text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100">
+
+                        <X size={20} />
+
+                    </button>
+
+                </div>
+
+            </div>
+
+
+
+            {/* Audit Log Table */}
+
+            <div className="bg-white border border-slate-200 rounded-[28px] shadow-sm overflow-hidden">
+
+                <div className="overflow-x-auto custom-scrollbar">
+
+                    <table className="w-full text-left min-w-[1000px]">
+
+                        <thead className="bg-slate-50/80 border-b border-slate-100 text-slate-400 text-[10px] uppercase tracking-[0.2em]">
+
+                            <tr>
+
+                                <th className="py-5 px-6 font-black"><div className="flex items-center gap-2"><Clock size={14}/> Timestamp</div></th>
+
+                                <th className="py-5 px-6 font-black"><div className="flex items-center gap-2"><User size={14}/> Patient (Student)</div></th>
+
+                                <th className="py-5 px-6 font-black"><div className="flex items-center gap-2"><Fingerprint size={14}/> Authorized By (Staff UID)</div></th>
+
+                                <th className="py-5 px-6 font-black"><div className="flex items-center gap-2"><MapPin size={14}/> Incident Coordinates</div></th>
+
+                                <th className="py-5 px-6 font-black text-right">Verification Status</th>
+
+                            </tr>
+
+                        </thead>
+
+                        <tbody className="divide-y divide-slate-100 text-sm">
+
+                            {loading ? (
+
+                                <tr><td colSpan={5} className="py-24 text-center"><Loader2 className="animate-spin mx-auto text-red-500" size={32} /></td></tr>
+
+                            ) : filteredLogs.length === 0 ? (
+
+                                <tr><td colSpan={5} className="py-24 text-center text-slate-400 font-bold uppercase tracking-widest italic">No access logs found in system.</td></tr>
+
+                            ) : filteredLogs.map((log: any) => (
+
+                                <tr key={log.id} className="hover:bg-slate-50/50 transition-all group">
+
+                                    <td className="py-4 px-6">
+
+                                        <div className="font-bold text-slate-700">{formatDate(log.created_at)}</div>
+
+                                        <div className="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Log ID: {log.id.split('-')[0]}</div>
+
+                                    </td>
+
+                                    
+
+                                    <td className="py-4 px-6">
+
+                                        <div className="font-black text-slate-900 text-base">{log.student_name}</div>
+
+                                        <div className="text-[10px] text-red-400 font-bold uppercase mt-1 tracking-widest">ID: {log.student_number}</div>
+
+                                    </td>
+
+                                    
+
+                                    <td className="py-4 px-6">
+
+                                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border bg-slate-100 text-slate-600 border-slate-200 text-[9px] font-black tracking-widest">
+
+                                            UID: {log.accessed_by_uid.substring(0, 15)}...
+
+                                        </div>
+
+                                    </td>
+
+
+
+                                    <td className="py-4 px-6">
+
+                                        {/* Handling potential null coordinates safely */}
+
+                                        <div className="text-xs font-bold text-slate-600">
+
+                                            Lat: {log.latitude != null ? Number(log.latitude).toFixed(5) : 'N/A'}
+
+                                        </div>
+
+                                        <div className="text-xs font-bold text-slate-600">
+
+                                            Lng: {log.longitude != null ? Number(log.longitude).toFixed(5) : 'N/A'}
+
+                                        </div>
+
+                                    </td>
+
+                                    
+
+                                    <td className="py-4 px-6 text-right">
+
+                                        <span className="inline-flex items-center gap-1.5 text-[9px] font-black tracking-widest uppercase text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-lg">
+
+                                            <Activity size={12} /> DUAL-SCAN VERIFIED
+
+                                        </span>
+
+                                    </td>
+
+                                </tr>
+
+                            ))}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    );
+
+} on the next js file please retrieve the exact responder not the uid and last but not least please create a file whereby the ladnlord will be able to add all this data of a map in the database manually so they can appear in this map 
+
+
+
+please use the following data from mapBox 
+
+
+
+{
+
+    "type": "FeatureCollection",
+
+    "features": [
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Tsalanang G",
+
+                "marker-color": "#312E81"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.866129,
+
+                    -26.715188
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.866129,
+
+                -26.715188,
+
+                27.866129,
+
+                -26.715188
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Tsalanang F",
+
+                "marker-color": "#312E81"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.866117,
+
+                    -26.715365
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.866117,
+
+                -26.715365,
+
+                27.866117,
+
+                -26.715365
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {},
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.866454,
+
+                    -26.71532
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.866454,
+
+                -26.71532,
+
+                27.866454,
+
+                -26.71532
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Tsalanang D",
+
+                "marker-color": "#312E81"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.866156,
+
+                    -26.715586
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.866156,
+
+                -26.715586,
+
+                27.866156,
+
+                -26.715586
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Leseding E",
+
+                "marker-color": "#312E81"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.865808,
+
+                    -26.715458
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865808,
+
+                -26.715458,
+
+                27.865808,
+
+                -26.715458
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Student Town Laundry ",
+
+                "marker-symbol": "laundry",
+
+                "marker-size": "large"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.866671,
+
+                    -26.715819
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.866671,
+
+                -26.715819,
+
+                27.866671,
+
+                -26.715819
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Vut Main res Gym",
+
+                "marker-color": "rgba(34, 34, 227, 1)",
+
+                "marker-symbol": "fitness-centre",
+
+                "marker-size": "large"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.866418,
+
+                    -26.71565
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.866418,
+
+                -26.71565,
+
+                27.866418,
+
+                -26.71565
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Lethabong M"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.867029,
+
+                    -26.715623
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.867029,
+
+                -26.715623,
+
+                27.867029,
+
+                -26.715623
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": ""
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.867072,
+
+                    -26.715809
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.867072,
+
+                -26.715809,
+
+                27.867072,
+
+                -26.715809
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Lethabong L"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.867075,
+
+                    -26.715972
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.867075,
+
+                -26.715972,
+
+                27.867075,
+
+                -26.715972
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Leseding A",
+
+                "marker-color": "#312E81"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.865982,
+
+                    -26.715822
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865982,
+
+                -26.715822,
+
+                27.865982,
+
+                -26.715822
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Leseding B",
+
+                "marker-color": "#312E81"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.865654,
+
+                    -26.71584
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865654,
+
+                -26.71584,
+
+                27.865654,
+
+                -26.71584
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Leseding C",
+
+                "marker-color": "#312E81"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.865667,
+
+                    -26.715647
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865667,
+
+                -26.715647,
+
+                27.865667,
+
+                -26.715647
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Placement Office",
+
+                "marker-symbol": "home",
+
+                "marker-size": "large"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.86461,
+
+                    -26.716297
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.86461,
+
+                -26.716297,
+
+                27.86461,
+
+                -26.716297
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Student Town Matron",
+
+                "marker-color": "#312E81",
+
+                "marker-size": "large",
+
+                "marker-symbol": "commercial"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.86673,
+
+                    -26.715923
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.86673,
+
+                -26.715923,
+
+                27.86673,
+
+                -26.715923
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {},
+
+            "geometry": {
+
+                "type": "Polygon",
+
+                "coordinates": [
+
+                    [
+
+                        [
+
+                            27.865453,
+
+                            -26.716058
+
+                        ],
+
+                        [
+
+                            27.865453,
+
+                            -26.716058
+
+                        ],
+
+                        [
+
+                            27.865453,
+
+                            -26.716058
+
+                        ],
+
+                        [
+
+                            27.865453,
+
+                            -26.716058
+
+                        ]
+
+                    ]
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865453,
+
+                -26.716058,
+
+                27.865453,
+
+                -26.716058
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Main res Basket Ball Court",
+
+                "fill-opacity": 0.5,
+
+                "fill": "rgba(222, 195, 220, 1)"
+
+            },
+
+            "geometry": {
+
+                "type": "Polygon",
+
+                "coordinates": [
+
+                    [
+
+                        [
+
+                            27.865466,
+
+                            -26.716058
+
+                        ],
+
+                        [
+
+                            27.865466,
+
+                            -26.716626
+
+                        ],
+
+                        [
+
+                            27.866392,
+
+                            -26.716626
+
+                        ],
+
+                        [
+
+                            27.866392,
+
+                            -26.716058
+
+                        ],
+
+                        [
+
+                            27.865466,
+
+                            -26.716058
+
+                        ]
+
+                    ]
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865466,
+
+                -26.716626,
+
+                27.866392,
+
+                -26.716058
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Vut Main res Tennis court",
+
+                "stroke": "#312E81",
+
+                "fill-opacity": 0.3
+
+            },
+
+            "geometry": {
+
+                "type": "Polygon",
+
+                "coordinates": [
+
+                    [
+
+                        [
+
+                            27.863297,
+
+                            -26.715395
+
+                        ],
+
+                        [
+
+                            27.863297,
+
+                            -26.715754
+
+                        ],
+
+                        [
+
+                            27.863894,
+
+                            -26.715754
+
+                        ],
+
+                        [
+
+                            27.863894,
+
+                            -26.715395
+
+                        ],
+
+                        [
+
+                            27.863297,
+
+                            -26.715395
+
+                        ]
+
+                    ]
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.863297,
+
+                -26.715754,
+
+                27.863894,
+
+                -26.715395
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Vut Chapel",
+
+                "marker-symbol": "religious-christian",
+
+                "marker-size": "large",
+
+                "marker-color": "#312E81"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.865702,
+
+                    -26.714708
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865702,
+
+                -26.714708,
+
+                27.865702,
+
+                -26.714708
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Main Res Lapa"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.865465,
+
+                    -26.714222
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865465,
+
+                -26.714222,
+
+                27.865465,
+
+                -26.714222
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Vut Cafeteria",
+
+                "marker-symbol": "fast-food",
+
+                "marker-size": "large"
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.864863,
+
+                    -26.716629
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.864863,
+
+                -26.716629,
+
+                27.864863,
+
+                -26.716629
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Vut res soccer field",
+
+                "stroke": "#312E81",
+
+                "stroke-opacity": 1
+
+            },
+
+            "geometry": {
+
+                "type": "LineString",
+
+                "coordinates": [
+
+                    [
+
+                        27.862851,
+
+                        -26.714086
+
+                    ],
+
+                    [
+
+                        27.862591,
+
+                        -26.713614
+
+                    ],
+
+                    [
+
+                        27.86295,
+
+                        -26.713587
+
+                    ],
+
+                    [
+
+                        27.863319,
+
+                        -26.713632
+
+                    ],
+
+                    [
+
+                        27.863549,
+
+                        -26.714157
+
+                    ],
+
+                    [
+
+                        27.863708,
+
+                        -26.71438
+
+                    ],
+
+                    [
+
+                        27.863838,
+
+                        -26.714727
+
+                    ],
+
+                    [
+
+                        27.863918,
+
+                        -26.714995
+
+                    ],
+
+                    [
+
+                        27.863698,
+
+                        -26.715155
+
+                    ],
+
+                    [
+
+                        27.863429,
+
+                        -26.715182
+
+                    ],
+
+                    [
+
+                        27.863299,
+
+                        -26.715128
+
+                    ],
+
+                    [
+
+                        27.86319,
+
+                        -26.714932
+
+                    ],
+
+                    [
+
+                        27.86304,
+
+                        -26.714576
+
+                    ],
+
+                    [
+
+                        27.86296,
+
+                        -26.714318
+
+                    ],
+
+                    [
+
+                        27.862861,
+
+                        -26.714104
+
+                    ],
+
+                    [
+
+                        27.862761,
+
+                        -26.713908
+
+                    ],
+
+                    [
+
+                        27.862731,
+
+                        -26.713952
+
+                    ]
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.862591,
+
+                -26.715182,
+
+                27.863918,
+
+                -26.713587
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "name": "Student Town soccer field",
+
+                "stroke-width": 4
+
+            },
+
+            "geometry": {
+
+                "type": "LineString",
+
+                "coordinates": [
+
+                    [
+
+                        27.867454,
+
+                        -26.71622
+
+                    ],
+
+                    [
+
+                        27.867581,
+
+                        -26.716258
+
+                    ],
+
+                    [
+
+                        27.867678,
+
+                        -26.716266
+
+                    ],
+
+                    [
+
+                        27.86776,
+
+                        -26.716262
+
+                    ],
+
+                    [
+
+                        27.867831,
+
+                        -26.716233
+
+                    ],
+
+                    [
+
+                        27.867918,
+
+                        -26.716181
+
+                    ],
+
+                    [
+
+                        27.867874,
+
+                        -26.715987
+
+                    ],
+
+                    [
+
+                        27.867758,
+
+                        -26.715897
+
+                    ],
+
+                    [
+
+                        27.867613,
+
+                        -26.715858
+
+                    ],
+
+                    [
+
+                        27.86741,
+
+                        -26.715884
+
+                    ],
+
+                    [
+
+                        27.867367,
+
+                        -26.715922
+
+                    ],
+
+                    [
+
+                        27.867352,
+
+                        -26.716013
+
+                    ],
+
+                    [
+
+                        27.86737,
+
+                        -26.716126
+
+                    ],
+
+                    [
+
+                        27.867453,
+
+                        -26.716217
+
+                    ]
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.867352,
+
+                -26.716266,
+
+                27.867918,
+
+                -26.715858
+
+            ]
+
+        },
+
+        {
+
+            "type": "Feature",
+
+            "properties": {
+
+                "marker-size": "large",
+
+                "marker-symbol": "laundry",
+
+                "marker-color": "#312E81",
+
+                "name": "Dinaleding Res Laundry "
+
+            },
+
+            "geometry": {
+
+                "type": "Point",
+
+                "coordinates": [
+
+                    27.865917,
+
+                    -26.717674
+
+                ]
+
+            },
+
+            "bbox": [
+
+                27.865917,
+
+                -26.717674,
+
+                27.865917,
+
+                -26.717674
+
+            ]
+
+        }
+
+    ]
+
+}
+
+
+
+And alloe the landlord to be able to add another locations when they add them manually §

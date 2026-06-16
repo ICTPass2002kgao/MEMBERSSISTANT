@@ -1,3 +1,5 @@
+// REPLACE YOUR ENTIRE staff_main_menu.dart WITH THIS
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
@@ -6,13 +8,12 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/components/api_class.dart';
 import 'package:mobile_app/auth/login.dart';
-import 'package:mobile_app/staff_screens/notifications.dart';
-import 'package:mobile_app/student_screens/tabs/campus_map_tab.dart'; // Reusing map for staff
-import 'package:mobile_app/staff_screens/staff_emergency_dashboard.dart'; 
+import 'package:mobile_app/medical_responders/notifications.dart';
+import 'package:mobile_app/student_screens/tabs/campus_map_tab.dart';
+import 'package:mobile_app/medical_responders/staff_emergency_dashboard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// Helper class to manage dynamic tabs
 class NavItemData {
   final IconData icon;
   final String label;
@@ -40,13 +41,16 @@ class _StaffMainMenuState extends State<StaffMainMenu> {
   int _unreadCount = 0;
   Timer? _pollingTimer;
 
+  // Track emergency coordinates for map routing
+  double? _targetLat;
+  double? _targetLng;
+
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _fetchUnreadCount();
-    
-    // Poll for new emergency notifications every 15 seconds
+
     _pollingTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
       _fetchUnreadCount();
     });
@@ -85,11 +89,7 @@ class _StaffMainMenuState extends State<StaffMainMenu> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final results = data is List ? data : (data['results'] ?? []);
-        if (mounted) {
-          setState(() {
-            _unreadCount = results.length;
-          });
-        }
+        if (mounted) setState(() => _unreadCount = results.length);
       }
     } catch (e) {
       debugPrint("Failed to fetch unread count: $e");
@@ -115,17 +115,26 @@ class _StaffMainMenuState extends State<StaffMainMenu> {
     final bgColor = theme.scaffoldBackgroundColor;
     final slateColor = theme.colorScheme.onSecondary;
 
-    // Build tabs for Staff
     List<NavItemData> activeTabs = [
       NavItemData(
         icon: CupertinoIcons.shield_lefthalf_fill,
         label: 'Dispatch',
-        page: const StaffEmergencyDashboard(),
+        // Pass the callback to the dashboard
+        page: StaffEmergencyDashboard(
+          onGetDirections: (lat, lng) {
+            setState(() {
+              _targetLat = lat;
+              _targetLng = lng;
+              _selectedIndex = 1; // Instantly switch to the Map Tab
+            });
+          },
+        ),
       ),
       NavItemData(
         icon: CupertinoIcons.map_fill,
         label: 'Map',
-        page: const CampusMapTab(), // Reusing the Mapbox tab for staff navigation
+        // Inject the target coordinates into the Map
+        page: CampusMapTab(targetLat: _targetLat, targetLng: _targetLng),
       ),
       NavItemData(
         icon: CupertinoIcons.bell_fill,
@@ -160,21 +169,15 @@ class _StaffMainMenuState extends State<StaffMainMenu> {
                   color: Colors.white.withOpacity(0.08),
                   width: 1.5,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 30,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: List.generate(activeTabs.length, (index) {
                   final tab = activeTabs[index];
-                  // If it's the dispatch tab, let's make it red to stand out for emergencies
                   final isEmergencyTab = tab.label == 'Dispatch';
-                  final tabColor = isEmergencyTab ? Colors.redAccent : primaryColor;
+                  final tabColor = isEmergencyTab
+                      ? Colors.redAccent
+                      : primaryColor;
 
                   return _buildNavItem(
                     index,
@@ -186,8 +189,11 @@ class _StaffMainMenuState extends State<StaffMainMenu> {
                     onTap: () {
                       setState(() {
                         _selectedIndex = index;
-                        if (tab.label == 'Alerts') {
-                          _unreadCount = 0;
+                        if (tab.label == 'Alerts') _unreadCount = 0;
+                        // Reset map targets if they tap away to avoid re-routing endlessly
+                        if (index != 1) {
+                          _targetLat = null;
+                          _targetLng = null;
                         }
                       });
                     },
@@ -211,7 +217,6 @@ class _StaffMainMenuState extends State<StaffMainMenu> {
     required VoidCallback onTap,
   }) {
     final bool isSelected = _selectedIndex == index;
-
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -223,7 +228,9 @@ class _StaffMainMenuState extends State<StaffMainMenu> {
           vertical: 12.0,
         ),
         decoration: BoxDecoration(
-          color: isSelected ? activeColor.withOpacity(0.15) : Colors.transparent,
+          color: isSelected
+              ? activeColor.withOpacity(0.15)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(24),
         ),
         child: Row(
@@ -274,7 +281,6 @@ class _StaffMainMenuState extends State<StaffMainMenu> {
                       color: activeColor,
                       fontWeight: FontWeight.w900,
                       fontSize: 12,
-                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
@@ -303,11 +309,12 @@ class _StaffProfileTab extends StatelessWidget {
     final textColor = theme.colorScheme.onSurface;
     final slateColor = theme.colorScheme.onSecondary;
 
-    final String name = "${userData?['name'] ?? 'Staff'} ${userData?['surname'] ?? ''}".trim();
+    final String name =
+        "${userData?['name'] ?? 'Staff'} ${userData?['surname'] ?? ''}".trim();
     final String role = userData?['role'] ?? 'STAFF MEMBER';
     final String email = userData?['email'] ?? 'No email provided';
     final String phone = userData?['phone'] ?? 'N/A';
-    
+
     String initials = "S";
     if (name.isNotEmpty) {
       initials = name[0];
@@ -319,7 +326,12 @@ class _StaffProfileTab extends StatelessWidget {
     return SafeArea(
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(left: 24, right: 24, top: 32, bottom: 100),
+        padding: const EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 32,
+          bottom: 100,
+        ),
         child: Column(
           children: [
             Text(
@@ -332,8 +344,6 @@ class _StaffProfileTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 32),
-            
-            // Avatar Header
             Center(
               child: Column(
                 children: [
@@ -341,16 +351,25 @@ class _StaffProfileTab extends StatelessWidget {
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: primaryColor.withOpacity(0.3), width: 2),
+                      border: Border.all(
+                        color: primaryColor.withOpacity(0.3),
+                        width: 2,
+                      ),
                     ),
                     child: CircleAvatar(
                       radius: 48,
                       backgroundColor: primaryColor.withOpacity(0.15),
-                      backgroundImage: userData?['face_url'] != null ? NetworkImage(userData!['face_url']) : null,
+                      backgroundImage: userData?['face_url'] != null
+                          ? NetworkImage(userData!['face_url'])
+                          : null,
                       child: userData?['face_url'] == null
                           ? Text(
                               initials.toUpperCase(),
-                              style: TextStyle(color: primaryColor, fontWeight: FontWeight.w900, fontSize: 36),
+                              style: TextStyle(
+                                color: primaryColor,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 36,
+                              ),
                             )
                           : null,
                     ),
@@ -358,32 +377,46 @@ class _StaffProfileTab extends StatelessWidget {
                   const SizedBox(height: 16),
                   Text(
                     name,
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: textColor),
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: textColor,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: primaryColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       role,
-                      style: TextStyle(color: primaryColor, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 1.0),
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                        letterSpacing: 1.0,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-
             const SizedBox(height: 40),
-
-            // Information Block
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 "CONTACT INFORMATION",
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: primaryColor, letterSpacing: 1.5),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  color: primaryColor,
+                  letterSpacing: 1.5,
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -399,35 +432,76 @@ class _StaffProfileTab extends StatelessWidget {
                     padding: const EdgeInsets.all(20),
                     child: Row(
                       children: [
-                        Icon(CupertinoIcons.mail_solid, color: slateColor.withOpacity(0.5), size: 22),
+                        Icon(
+                          CupertinoIcons.mail_solid,
+                          color: slateColor.withOpacity(0.5),
+                          size: 22,
+                        ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Email Address", style: TextStyle(color: slateColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                              Text(
+                                "Email Address",
+                                style: TextStyle(
+                                  color: slateColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                               const SizedBox(height: 2),
-                              Text(email, style: TextStyle(color: textColor, fontSize: 15, fontWeight: FontWeight.w800)),
+                              Text(
+                                email,
+                                style: TextStyle(
+                                  color: textColor,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  Divider(height: 1, thickness: 1, color: primaryColor.withOpacity(0.05), indent: 56),
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: primaryColor.withOpacity(0.05),
+                    indent: 56,
+                  ),
                   Padding(
                     padding: const EdgeInsets.all(20),
                     child: Row(
                       children: [
-                        Icon(CupertinoIcons.phone_fill, color: slateColor.withOpacity(0.5), size: 22),
+                        Icon(
+                          CupertinoIcons.phone_fill,
+                          color: slateColor.withOpacity(0.5),
+                          size: 22,
+                        ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Phone Number", style: TextStyle(color: slateColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                              Text(
+                                "Phone Number",
+                                style: TextStyle(
+                                  color: slateColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                               const SizedBox(height: 2),
-                              Text(phone, style: TextStyle(color: textColor, fontSize: 15, fontWeight: FontWeight.w800)),
+                              Text(
+                                phone,
+                                style: TextStyle(
+                                  color: textColor,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -437,23 +511,28 @@ class _StaffProfileTab extends StatelessWidget {
                 ],
               ),
             ),
-
             const SizedBox(height: 40),
-
-            // Logout Button
             SizedBox(
               width: double.infinity,
               height: 56,
               child: ElevatedButton.icon(
                 onPressed: onLogout,
                 icon: const Icon(CupertinoIcons.square_arrow_right),
-                label: const Text('SIGN OUT SECURELY', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                label: const Text(
+                  'SIGN OUT SECURELY',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.withOpacity(0.1),
                   foregroundColor: Colors.redAccent,
                   elevation: 0,
                   side: BorderSide(color: Colors.red.withOpacity(0.3)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                 ),
               ),
             ),

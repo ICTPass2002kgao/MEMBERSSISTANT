@@ -17,12 +17,10 @@ import '../components/liveness_wrapper.dart'
     if (dart.library.io) '../components/liveness_wrapper_mobile.dart'
     if (dart.library.html) '../components/liveness_wrapper_web.dart';
 
-import 'package:mobile_app/components/api_class.dart';
-// import 'package:mobile_app/landlord_screens/landlord_dashboard.dart';
-
+import 'package:mobile_app/components/api_class.dart'; 
 class LandlordFaceVerificationScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
-  final Uint8List signatureBytes;
+  final Uint8List contractPdfBytes;
   final Uint8List idDocumentBytes;
   final String idDocumentName;
   final String deviceId;
@@ -30,7 +28,7 @@ class LandlordFaceVerificationScreen extends StatefulWidget {
   const LandlordFaceVerificationScreen({
     super.key,
     required this.userData,
-    required this.signatureBytes,
+    required this.contractPdfBytes,
     required this.idDocumentBytes,
     required this.idDocumentName,
     required this.deviceId,
@@ -51,7 +49,6 @@ class _LandlordFaceVerificationScreenState
   bool _isVerifyingLiveness = false;
   bool _isVerifyingBackend = false;
 
-  // Debug toggle: Set to false by default to speed up development.
   bool _enableLivenessCheck = false;
 
   String _processStatus = "Initializing...";
@@ -177,11 +174,12 @@ class _LandlordFaceVerificationScreenState
       request.headers['Authorization'] = 'Bearer $token';
       request.fields['device_id'] = widget.deviceId;
 
+      // Ensure we send the generated PDF correctly
       request.files.add(
         http.MultipartFile.fromBytes(
           'contract_file',
-          widget.signatureBytes,
-          filename: 'signed_contract.png',
+          widget.contractPdfBytes,
+          filename: 'legally_binding_contract.pdf',
         ),
       );
 
@@ -220,23 +218,18 @@ class _LandlordFaceVerificationScreenState
 
         _showMessage("Digital verification successful! Welcome.", Colors.green);
 
-        // Add a slight delay for the user to hear the sound and see the message before leaving
         await Future.delayed(const Duration(seconds: 2));
         if (!mounted) return;
 
-        // Return to the previous screen (e.g., dashboard or profile)
         Navigator.pop(context, true);
       } else if (response.statusCode == 403) {
-        _showMessage(
-          "Biometric mismatch. Account flagged for manual review.",
-          Colors.orange,
-        );
+        await playSound(false);
         setState(() {
-          widget.userData['manual_verification_status'] = true;
+          _isVerifyingLiveness = false;
+          _isVerifyingBackend = false;
+          _processStatus = "Verification Failed";
         });
-
-        if (!mounted) return;
-        Navigator.pop(context);
+        _showRetryOrManualDialog();
       } else {
         final error =
             jsonDecode(responseData)['error'] ?? "Verification failed.";
@@ -244,6 +237,91 @@ class _LandlordFaceVerificationScreenState
       }
     } catch (e) {
       _handleFailure(reason: "Secure Upload Error: $e");
+    }
+  }
+
+  void _showRetryOrManualDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          "Verification Failed",
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        content: Text(
+          "Your live capture did not match the provided ID document. This could be due to poor lighting or blurriness.\n\nWould you like to try again online or submit your profile for manual review by an administrator?",
+          style: GoogleFonts.poppins(
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _initializeCamera();
+            },
+            child: Text(
+              "Retry",
+              style: GoogleFonts.poppins(
+                  color: Colors.blue, fontWeight: FontWeight.bold),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            onPressed: () {
+              Navigator.pop(context);
+              _requestManualReview();
+            },
+            child: Text(
+              "Manual Review",
+              style: GoogleFonts.poppins(
+                  color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _requestManualReview() async {
+    setState(() {
+      _isVerifyingBackend = true;
+      _processStatus = "Submitting for manual review...";
+    });
+
+    try {
+      User? user = FirebaseAuth.instance.currentUser;
+      String? token = await user?.getIdToken();
+
+      var response = await http.post(
+        Uri.parse('${ApiClass().getApiBaseUrl()}/request-manual-review/'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        _showMessage("Profile submitted for manual review.", Colors.orange);
+
+        final prefs = await SharedPreferences.getInstance();
+        final userDataString = prefs.getString('user_data');
+        if (userDataString != null) {
+          Map<String, dynamic> localUserData = jsonDecode(userDataString);
+          localUserData['manual_verification_status'] = true;
+          await prefs.setString('user_data', jsonEncode(localUserData));
+        }
+
+        if (!mounted) return;
+        Navigator.pop(context, true);
+      } else {
+        _handleFailure(reason: "Failed to request manual review. Please try again.");
+      }
+    } catch (e) {
+      _handleFailure(reason: "Error: $e");
     }
   }
 
@@ -314,7 +392,7 @@ class _LandlordFaceVerificationScreenState
       ),
       body: Stack(
         children: [
-          const BubbleBackground(), // Ensure you have this widget defined elsewhere in your project
+          const BubbleBackground(),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -323,11 +401,8 @@ class _LandlordFaceVerificationScreenState
                   constraints: const BoxConstraints(maxWidth: 600),
                   child: Column(
                     children: [
-                      // --- DEBUG TOGGLE ---
-                      // Hidden automatically if compiled in Release mode
                       if (kDebugMode)
                         _buildDebugToggle(textColor, primaryColor),
-
                       _buildDetailsPanel(textColor, hintColor),
                       const SizedBox(height: 32),
                       if (!_hasAgreedToDisclaimer)
@@ -512,7 +587,6 @@ class _LandlordFaceVerificationScreenState
             ),
           ),
           const SizedBox(height: 32),
-
           Stack(
             alignment: Alignment.center,
             children: [
@@ -524,7 +598,6 @@ class _LandlordFaceVerificationScreenState
                   color: primaryColor.withOpacity(0.1),
                 ),
               ),
-
               ClipOval(
                 child: Container(
                   width: 220,
@@ -533,7 +606,6 @@ class _LandlordFaceVerificationScreenState
                   child: (!kIsWeb && _isVerifyingLiveness)
                       ? getLivenessWidget(
                           onSuccess: (result) async {
-                            // 1. Instantly hide the liveness widget to force it to release the camera hardware
                             setState(() {
                               _isVerifyingLiveness = false;
                               _isVerifyingBackend = true;
@@ -542,12 +614,10 @@ class _LandlordFaceVerificationScreenState
                             });
 
                             try {
-                              // 2. Give the iOS/Android operating system 500ms to fully release the camera lock
                               await Future.delayed(
                                 const Duration(milliseconds: 500),
                               );
 
-                              // 3. Re-initialize our own camera controller safely
                               final cameras = await availableCameras();
                               CameraDescription targetCamera = cameras
                                   .firstWhere(
@@ -565,21 +635,17 @@ class _LandlordFaceVerificationScreenState
 
                               await _cameraController!.initialize();
 
-                              // 4. Give the camera a brief moment to adjust lighting and focus
                               await Future.delayed(
                                 const Duration(milliseconds: 500),
                               );
 
-                              // 5. Take the actual photo
                               final XFile capturedFile =
                                   await _cameraController!.takePicture();
                               Uint8List capturedBytes = await capturedFile
                                   .readAsBytes();
 
-                              // 6. Pause the camera to save battery
                               await _cameraController?.pausePreview();
 
-                              // 7. Send everything to your Django backend
                               setState(() {
                                 _processStatus =
                                     'Verifying biometrics & securing documents...';
@@ -612,7 +678,6 @@ class _LandlordFaceVerificationScreenState
                               )),
                 ),
               ),
-
               if (_isCameraInitialized || _isVerifyingLiveness)
                 Positioned.fill(
                   child: ClipOval(
@@ -647,7 +712,6 @@ class _LandlordFaceVerificationScreenState
                     ),
                   ),
                 ),
-
               Positioned.fill(
                 child: Container(
                   width: 220,

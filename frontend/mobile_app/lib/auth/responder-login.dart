@@ -13,7 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'package:mobile_app/auth/login.dart'; // For BubbleBackground
 import 'package:mobile_app/components/api_class.dart';
-import 'package:mobile_app/staff_screens/staff_main_menu.dart';
+import 'package:mobile_app/medical_responders/staff_main_menu.dart';
 
 import '../components/liveness_wrapper.dart'
     if (dart.library.io) '../components/liveness_wrapper_mobile.dart'

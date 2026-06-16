@@ -1,13 +1,24 @@
 import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'dart:ui';
-import 'package:flutter/material.dart';
+ 
+import 'package:file_picker/file_picker.dart'; 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart'; 
+import 'package:intl/intl.dart';
 import 'package:mobile_app/auth/face_verify.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw; 
 import 'package:signature/signature.dart';
-import 'package:file_picker/file_picker.dart';
+ 
 
-// Import your new face verification screen
+import '../components/liveness_wrapper.dart'
+    if (dart.library.io) '../components/liveness_wrapper_mobile.dart'
+    if (dart.library.html) '../components/liveness_wrapper_web.dart';
 
+// ----------------------------------------------------------------------
+// REUSABLE BACKGROUND
+// ----------------------------------------------------------------------
 class BubbleBackground extends StatelessWidget {
   const BubbleBackground({super.key});
 
@@ -97,6 +108,9 @@ class BubbleBackground extends StatelessWidget {
   }
 }
 
+// ----------------------------------------------------------------------
+// SCREEN 1: CONTRACT & ID UPLOAD
+// ----------------------------------------------------------------------
 class LandlordVerificationScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
 
@@ -107,8 +121,7 @@ class LandlordVerificationScreen extends StatefulWidget {
       _LandlordVerificationScreenState();
 }
 
-class _LandlordVerificationScreenState
-    extends State<LandlordVerificationScreen> {
+class _LandlordVerificationScreenState extends State<LandlordVerificationScreen> {
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
     penColor: Colors.black,
@@ -119,6 +132,7 @@ class _LandlordVerificationScreenState
   String? _idDocumentName;
 
   bool _agreedToPopiaAndContract = false;
+  bool _isGeneratingPdf = false;
 
   String get _deviceId {
     try {
@@ -163,12 +177,84 @@ class _LandlordVerificationScreenState
     }
   }
 
+  Future<Uint8List> _generateLegalContractPdf(
+      Uint8List signatureBytes, String fullName, String email, String idNumber) async {
+    final pdf = pw.Document();
+    final String currentDate = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+    final signatureImage = pw.MemoryImage(signatureBytes);
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Center(
+                child: pw.Text("STRICT FRAUD LIABILITY & SERVICE AGREEMENT",
+                    style: pw.TextStyle(
+                        fontSize: 18,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.red800)),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Divider(thickness: 2),
+              pw.SizedBox(height: 20),
+              pw.Text("PARTIES TO THE AGREEMENT:",
+                  style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 10),
+              pw.Text("This binding agreement is executed by and between the Platform Administration and:"),
+              pw.Text("Full Name: $fullName"),
+              pw.Text("Email Address: $email"),
+              pw.Text("National ID / Passport: ${idNumber.isNotEmpty ? idNumber : 'Verified via App'}"),
+              pw.SizedBox(height: 20),
+              pw.Text("TERMS AND CONDITIONS:",
+                  style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 10),
+              pw.Paragraph(
+                  text:
+                      "1. GUARANTEE OF ACCOMMODATION: I declare under penalty of perjury that I legally manage or own the properties I am listing. I commit to fulfilling all residential obligations to students who apply through this platform."),
+              pw.Paragraph(
+                  text:
+                      "2. FRAUD AND SCAM ACCOUNTABILITY: I understand that listing phantom properties, requesting deposits for non-existent rooms, or engaging in any form of financial scam is a direct violation of the law. I accept full legal and financial liability for any damages caused by fraudulent listings associated with my account."),
+              pw.Paragraph(
+                  text:
+                      "3. LAW ENFORCEMENT COOPERATION: In the event of suspected fraud, the platform reserves the unconditional right to immediately suspend my account and hand over this digitally signed contract, my uploaded Identity Document, my Facial Biometric scans, and my device IP logs to the South African Police Service (SAPS) or relevant law enforcement agencies."),
+              pw.Paragraph(
+                  text:
+                      "4. POPIA DATA CONSENT: I explicitly consent to the encrypted server storage of my personal identification and biometric data. I acknowledge this data is collected strictly for identity verification and fraud prevention purposes."),
+              pw.SizedBox(height: 30),
+              pw.Divider(),
+              pw.SizedBox(height: 10),
+              pw.Text("DIGITAL AUTHORIZATION",
+                  style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 10),
+              pw.Text(
+                  "By my signature below, I acknowledge that this electronic signature carries the exact same legal weight and enforceability as a physical handwritten signature."),
+              pw.SizedBox(height: 20),
+              pw.Container(
+                height: 100,
+                width: 250,
+                decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey)),
+                child: pw.Image(signatureImage, fit: pw.BoxFit.contain),
+              ),
+              pw.SizedBox(height: 10),
+              pw.Text("Digitally signed by: $fullName"),
+              pw.Text("Timestamp: $currentDate"),
+              pw.Text("Device Fingerprint: $_deviceId"),
+            ],
+          );
+        },
+      ),
+    );
+
+    return await pdf.save();
+  }
+
   Future<void> _proceedToLiveCapture() async {
     if (!_agreedToPopiaAndContract) {
-      _showMessage(
-        "Please agree to the POPIA & Contract terms before proceeding.",
-        Colors.red,
-      );
+      _showMessage("Please agree to the POPIA & Contract terms before proceeding.", Colors.red);
       return;
     }
     if (_signatureController.isEmpty) {
@@ -180,26 +266,41 @@ class _LandlordVerificationScreenState
       return;
     }
 
-    final Uint8List? signatureBytes = await _signatureController.toPngBytes();
-    if (signatureBytes == null) {
-      _showMessage("Failed to process signature.", Colors.red);
-      return;
-    }
+    setState(() => _isGeneratingPdf = true);
 
-    // Move to the next screen, passing the files forward
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LandlordFaceVerificationScreen(
-          userData: widget.userData,
-          signatureBytes: signatureBytes,
-          idDocumentBytes: _idDocumentBytes!,
-          idDocumentName: _idDocumentName ?? 'id_doc.pdf',
-          deviceId: _deviceId,
+    try {
+      final Uint8List? rawSignatureBytes = await _signatureController.toPngBytes();
+      if (rawSignatureBytes == null) throw Exception("Failed to process signature.");
+
+      final String fullName =
+          "${widget.userData['name'] ?? ''} ${widget.userData['surname'] ?? ''}".trim();
+      final String email = widget.userData['email'] ?? 'No Email';
+      final String idNumber = widget.userData['id_number'] ?? '';
+
+      final Uint8List contractPdfBytes = await _generateLegalContractPdf(
+          rawSignatureBytes, fullName, email, idNumber);
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LandlordFaceVerificationScreen(
+            userData: widget.userData,
+            contractPdfBytes: contractPdfBytes,
+            idDocumentBytes: _idDocumentBytes!,
+            idDocumentName: _idDocumentName ?? 'id_doc.pdf',
+            deviceId: _deviceId,
+          ),
         ),
-      ),
-    );
+      ).then((_) {
+        setState(() {});
+      });
+    } catch (e) {
+      _showMessage("Error generating secure contract: $e", Colors.red);
+    } finally {
+      if (mounted) setState(() => _isGeneratingPdf = false);
+    }
   }
 
   BoxDecoration _innerGlassDecoration(ThemeData theme) {
@@ -284,8 +385,7 @@ class _LandlordVerificationScreenState
     final primaryColor = theme.colorScheme.primary;
     final textColor = theme.colorScheme.onSurface;
     final String fullName =
-        "${widget.userData['name'] ?? ''} ${widget.userData['surname'] ?? ''}"
-            .trim();
+        "${widget.userData['name'] ?? ''} ${widget.userData['surname'] ?? ''}".trim();
 
     if (widget.userData['manual_verification_status'] == true &&
         widget.userData['digital_verification_status'] == false) {
@@ -315,13 +415,13 @@ class _LandlordVerificationScreenState
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(
-                              Icons.security_update_warning,
+                              Icons.pending_actions,
                               size: 80,
                               color: Colors.orange,
                             ),
                             const SizedBox(height: 20),
                             Text(
-                              "Manual Review Required",
+                              "Manual Review Pending",
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
@@ -330,7 +430,7 @@ class _LandlordVerificationScreenState
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              "The biometric system detected a mismatch between your live face and the ID provided. Your account is currently locked pending manual administrative review.",
+                              "You have opted to submit your profile for manual verification. An administrator will review your provided ID document and contract shortly. Please wait for approval before accessing your dashboard.",
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: theme.colorScheme.onSecondary,
@@ -432,7 +532,6 @@ class _LandlordVerificationScreenState
                           ),
                         ),
                         const SizedBox(height: 32),
-
                         Text(
                           "1. Review Legal Contract",
                           style: TextStyle(
@@ -444,7 +543,6 @@ class _LandlordVerificationScreenState
                         const SizedBox(height: 12),
                         _buildContractPreview(fullName, theme),
                         const SizedBox(height: 24),
-
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: _innerGlassDecoration(theme),
@@ -477,7 +575,6 @@ class _LandlordVerificationScreenState
                           ),
                         ),
                         const SizedBox(height: 32),
-
                         Text(
                           "2. Digital Signature",
                           style: TextStyle(
@@ -506,8 +603,8 @@ class _LandlordVerificationScreenState
                                 child: Signature(
                                   controller: _signatureController,
                                   height: 150,
-                                  backgroundColor: theme.scaffoldBackgroundColor
-                                      .withOpacity(0.9),
+                                  backgroundColor:
+                                      theme.scaffoldBackgroundColor.withOpacity(0.9),
                                 ),
                               ),
                               Align(
@@ -524,7 +621,6 @@ class _LandlordVerificationScreenState
                           ),
                         ),
                         const SizedBox(height: 32),
-
                         Text(
                           "3. Upload ID Document",
                           style: TextStyle(
@@ -570,32 +666,31 @@ class _LandlordVerificationScreenState
                           ),
                         ),
                         const SizedBox(height: 48),
-
                         SizedBox(
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: _proceedToLiveCapture,
+                            onPressed: _isGeneratingPdf ? null : _proceedToLiveCapture,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _agreedToPopiaAndContract
                                   ? primaryColor
-                                  : theme.colorScheme.onSecondary.withOpacity(
-                                      0.5,
-                                    ),
+                                  : theme.colorScheme.onSecondary.withOpacity(0.5),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               elevation: 8,
                               shadowColor: primaryColor.withOpacity(0.5),
                             ),
-                            child: const Text(
-                              "PROCEED TO BIOMETRICS",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.5,
-                              ),
-                            ),
+                            child: _isGeneratingPdf
+                                ? const CircularProgressIndicator(color: Colors.white)
+                                : const Text(
+                                    "PROCEED TO BIOMETRICS",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
@@ -610,3 +705,7 @@ class _LandlordVerificationScreenState
     );
   }
 }
+
+// ----------------------------------------------------------------------
+// SCREEN 2: LIVE CAMERA & BACKEND UPLOAD
+// ----------------------------------------------------------------------

@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:mobile_app/student_screens/tabs/profile.dart';
 
 class Dashboard extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -12,7 +13,7 @@ class Dashboard extends StatefulWidget {
   final String accommodationName;
   final String roomNumber;
   final String blockName;
-  final String unitName; 
+  final String unitName;
   final Function(int) onNavigate;
   final VoidCallback onLogout;
 
@@ -26,7 +27,7 @@ class Dashboard extends StatefulWidget {
     required this.accommodationName,
     required this.roomNumber,
     required this.blockName,
-    required this.unitName, 
+    required this.unitName,
     required this.onNavigate,
     required this.onLogout,
   });
@@ -43,43 +44,45 @@ class _DashboardState extends State<Dashboard> {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
 
-    return Column(
-      children: [
-        // --- CUSTOM TOP TAB BAR ---
-        Container(
-          margin: const EdgeInsets.only(left: 24, right: 24, top: 16),
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: primaryColor.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _buildTabButton(
-                  title: "My Details",
-                  index: 0,
-                  primaryColor: primaryColor,
+    return SafeArea(
+      child: Column(
+        children: [
+          // --- CUSTOM TOP TAB BAR ---
+          Container(
+            margin: const EdgeInsets.only(left: 24, right: 24, top: 16),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: primaryColor.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildTabButton(
+                    title: "My Details",
+                    index: 0,
+                    primaryColor: primaryColor,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _buildTabButton(
-                  title: "Student Card",
-                  index: 1,
-                  primaryColor: primaryColor,
+                Expanded(
+                  child: _buildTabButton(
+                    title: "Student Card",
+                    index: 1,
+                    primaryColor: primaryColor,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
 
-        // --- TAB CONTENT ---
-        Expanded(
-          child: _selectedTab == 0
-              ? _buildMyDetails(context)
-              : _buildStudentCardView(context),
-        ),
-      ],
+          // --- TAB CONTENT ---
+          Expanded(
+            child: _selectedTab == 0
+                ? _buildMyDetails(context)
+                : _buildStudentCardView(context),
+          ),
+        ],
+      ),
     );
   }
 
@@ -653,7 +656,7 @@ class _DashboardState extends State<Dashboard> {
             value,
             style: TextStyle(
               color: text,
-              fontSize: 16, 
+              fontSize: 16,
               fontWeight: FontWeight.w900,
             ),
             textAlign: TextAlign.center,
@@ -685,392 +688,4 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 }
-
-class StudentProfileScreen extends StatelessWidget {
-  final Map<String, dynamic> userData;
-  final VoidCallback onLogout;
-  final String initials;
-
-  const StudentProfileScreen({
-    super.key,
-    required this.userData,
-    required this.onLogout,
-    required this.initials,
-  });
-
-  Future<void> _resetPassword(BuildContext context, String email) async {
-    try {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const Center(child: CircularProgressIndicator()),
-      );
-
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-
-      if (!context.mounted) return;
-      Navigator.pop(context);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Password reset email sent to $email"),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Failed to send reset email. Please try again."),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
-    final slateColor = theme.colorScheme.onSecondary;
-    final textColor = theme.colorScheme.onSurface;
-
-    final String name = "${userData['name'] ?? ''} ${userData['surname'] ?? ''}"
-        .trim();
-    final String email = userData['email'] ?? 'No email provided';
-
-    final bool hasUnit =
-        userData['unit_name'] != null &&
-        userData['unit_name'] != "Unassigned Unit";
-
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: Icon(CupertinoIcons.back, color: textColor),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          "MY PROFILE",
-          style: TextStyle(
-            color: primaryColor,
-            fontSize: 12,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2.0,
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(left: 24, right: 24, bottom: 60),
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            // Avatar Header
-            Center(
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: primaryColor.withOpacity(0.3),
-                        width: 2,
-                      ),
-                    ),
-                    child: CircleAvatar(
-                      radius: 48,
-                      backgroundColor: primaryColor.withOpacity(0.15),
-                      backgroundImage: userData['face_url'] != null
-                          ? NetworkImage(userData['face_url'])
-                          : null,
-                      child: userData['face_url'] == null
-                          ? Text(
-                              initials.toUpperCase(),
-                              style: TextStyle(
-                                color: primaryColor,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 36,
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: textColor,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    userData['student_number'] ?? 'Unknown ID',
-                    style: TextStyle(
-                      color: slateColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 40),
-
-            // Information Block
-            _buildSectionHeader("PERSONAL INFORMATION", primaryColor),
-            _buildInfoCard([
-              _buildInfoRow(
-                CupertinoIcons.mail_solid,
-                "Email Address",
-                email,
-                textColor,
-                slateColor,
-              ),
-              _buildDivider(primaryColor),
-              _buildInfoRow(
-                CupertinoIcons.phone_fill,
-                "Phone Number",
-                userData['phone'] ?? 'N/A',
-                textColor,
-                slateColor,
-              ),
-            ], primaryColor),
-
-            const SizedBox(height: 24),
-
-            _buildSectionHeader("ACCOMMODATION DETAILS", primaryColor),
-            _buildInfoCard([
-              _buildInfoRow(
-                CupertinoIcons.building_2_fill,
-                "Property",
-                userData['accommodation_name'] ?? 'Unassigned',
-                textColor,
-                slateColor,
-              ),
-              _buildDivider(primaryColor),
-              _buildInfoRow(
-                CupertinoIcons.square_grid_2x2_fill,
-                "Block",
-                userData['block_name'] ?? 'Unassigned',
-                textColor,
-                slateColor,
-              ),
-              _buildDivider(primaryColor),
-              if (hasUnit) ...[
-                _buildInfoRow(
-                  CupertinoIcons.layers_fill,
-                  "Unit",
-                  userData['unit_name'],
-                  textColor,
-                  slateColor,
-                ),
-                _buildDivider(primaryColor),
-              ],
-              _buildInfoRow(
-                CupertinoIcons.bed_double_fill,
-                "Room Number",
-                userData['room_number_only'] ?? 'Unassigned',
-                textColor,
-                slateColor,
-              ),
-            ], primaryColor),
-
-            const SizedBox(height: 32),
-
-            _buildSectionHeader("SETTINGS & LEGAL", primaryColor),
-            _buildInfoCard([
-              _buildActionRow(
-                CupertinoIcons.lock_shield_fill,
-                "Reset Password",
-                "Send reset link to email",
-                textColor,
-                slateColor,
-                () {
-                  _resetPassword(context, email);
-                },
-              ),
-            ], primaryColor),
-
-            const SizedBox(height: 32),
-
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  onLogout();
-                },
-                icon: const Icon(CupertinoIcons.square_arrow_right),
-                label: const Text(
-                  'SIGN OUT SECURELY',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.withOpacity(0.1),
-                  foregroundColor: Colors.redAccent,
-                  elevation: 0,
-                  side: BorderSide(color: Colors.red.withOpacity(0.3)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title, Color primaryColor) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8, bottom: 12),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-            color: primaryColor,
-            letterSpacing: 1.5,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoCard(List<Widget> children, Color primary) {
-    return Container(
-      decoration: BoxDecoration(
-        color: primary.withOpacity(0.02),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: primary.withOpacity(0.1)),
-      ),
-      child: Column(children: children),
-    );
-  }
-
-  Widget _buildInfoRow(
-    IconData icon,
-    String label,
-    String value,
-    Color textColor,
-    Color slateColor,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          Icon(icon, color: slateColor.withOpacity(0.5), size: 22),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: slateColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionRow(
-    IconData icon,
-    String title,
-    String subtitle,
-    Color textColor,
-    Color slateColor,
-    VoidCallback onTap,
-  ) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: textColor.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: textColor, size: 20),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: slateColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              CupertinoIcons.chevron_right,
-              color: slateColor.withOpacity(0.5),
-              size: 18,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDivider(Color primary) {
-    return Divider(
-      height: 1,
-      thickness: 1,
-      color: primary.withOpacity(0.05),
-      indent: 56,
-    );
-  }
-}
+ 

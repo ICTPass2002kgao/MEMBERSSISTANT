@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:mobile_app/components/api_class.dart';
 import 'package:mobile_app/auth/login.dart';
 import 'package:mobile_app/student_screens/tabs/dashboard.dart';
+import 'package:mobile_app/student_screens/tabs/profile.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'accommodation_details.dart';
@@ -111,115 +112,110 @@ class _HomeTabState extends State<HomeTab> {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Discover',
-                          style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w900,
-                            color: theme.colorScheme.onSurface,
-                            letterSpacing: 1.2,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Discover',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w900,
+                          color: theme.colorScheme.onSurface,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      Text(
+                        'Premium Student Residences',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: primaryColor,
+                          letterSpacing: 1.5,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    if (_userData != null) {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (context) => StudentProfileScreen(
+                            userData: _userData!,
+                            onLogout: _handleLogout,
+                            initials: _initials,
                           ),
                         ),
-                        Text(
-                          'Premium Student Residences',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: primaryColor,
-                            letterSpacing: 1.5,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                      );
+                    } else {
+                      Navigator.pushReplacementNamed(context, '/');
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: primaryColor.withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      radius: 24,
+                      backgroundColor: primaryColor.withOpacity(0.15),
+                      backgroundImage: hasFace ? NetworkImage(faceUrl) : null,
+                      child: !hasFace
+                          ? Text(
+                              _initials.toUpperCase(),
+                              style: TextStyle(
+                                color: primaryColor,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 18,
+                              ),
+                            )
+                          : null,
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () {
-                      if (_userData != null) {
-                        Navigator.push(
-                          context,
-                          CupertinoPageRoute(
-                            builder: (context) => StudentProfileScreen(
-                              userData: _userData!,
-                              onLogout: _handleLogout,
-                              initials: _initials,
-                            ),
-                          ),
-                        );
-                      } else {
-                        Navigator.pushReplacementNamed(context, '/');
-                      }
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator(color: primaryColor))
+                : _errorMessage.isNotEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Text(
+                        _errorMessage,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.redAccent.shade400),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 24, top: 8),
+                    itemCount: _accommodations.length,
+                    itemBuilder: (context, index) {
+                      final acc = _accommodations[index];
+                      return _buildAccommodationCard(context, acc);
                     },
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: primaryColor.withOpacity(0.3),
-                          width: 2,
-                        ),
-                      ),
-                      child: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: primaryColor.withOpacity(0.15),
-                        backgroundImage: hasFace ? NetworkImage(faceUrl) : null,
-                        child: !hasFace
-                            ? Text(
-                                _initials.toUpperCase(),
-                                style: TextStyle(
-                                  color: primaryColor,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 18,
-                                ),
-                              )
-                            : null,
-                      ),
-                    ),
                   ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: _isLoading
-                  ? Center(
-                      child: CircularProgressIndicator(color: primaryColor),
-                    )
-                  : _errorMessage.isNotEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Text(
-                          _errorMessage,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.redAccent.shade400),
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 24, top: 8),
-                      itemCount: _accommodations.length,
-                      itemBuilder: (context, index) {
-                        final acc = _accommodations[index];
-                        return _buildAccommodationCard(context, acc);
-                      },
-                    ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
