@@ -125,7 +125,7 @@ class StudentProfile(BaseModel):
     
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, default='MALE')
     verification_status= models.BooleanField(default=False)
-    
+    face_encoding_json = models.TextField(blank=True, null=True)
     landlord = models.ForeignKey(LandlordProfile, on_delete=models.CASCADE, related_name='students', null=True, blank=True)
     fcm_token = models.TextField(blank=True, null=True)
     firebase_uid = models.CharField(max_length=128, unique=True)
@@ -366,7 +366,8 @@ class MedicalResponderProfile(BaseModel):
     email = encrypt(models.EmailField())
     phone = encrypt(models.CharField(max_length=15))
     face_url = encrypt(models.URLField(blank=True, null=True, max_length=500))
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True) 
+    role = models.CharField(max_length=20, default='responder')
 
     @property
     def is_authenticated(self):
@@ -375,24 +376,28 @@ class MedicalResponderProfile(BaseModel):
     def __str__(self):
         return f"{self.name} {self.surname} (Medical Team)"
 
+# Add this inside your models.py
 class EmergencyReport(BaseModel):
     STATUS_CHOICES = [
         ('PENDING', 'Pending / Unassigned'),
         ('RESPONDING', 'Staff Responding'),
         ('RESOLVED', 'Resolved / Closed')
     ]
+    # The student who pressed the panic button
     reporting_student = models.ForeignKey('StudentProfile', on_delete=models.CASCADE, related_name='reported_emergencies')
+    
+    # NEW: The student identified by the AI from the photo
+    identified_patient = models.ForeignKey('StudentProfile', on_delete=models.SET_NULL, null=True, blank=True, related_name='medical_emergencies')  
     latitude = models.FloatField()
     longitude = models.FloatField()
+    face_encoding_json = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    emergency_type = models.CharField(max_length=100, default='Other')
+    situation_image_url = models.CharField(max_length=500, blank=True, null=True) 
     description = models.TextField(blank=True, null=True)
-    
-    # CRITICAL: Now correctly points to the dedicated MedicalResponderProfile, NOT the maintenance AttendantProfile
     resolved_by = models.ForeignKey(MedicalResponderProfile, on_delete=models.SET_NULL, null=True, blank=True)
-
     def __str__(self):
-        return f"Emergency by {self.reporting_student.student_number} at {self.created_at}"
-
+        return f"{self.emergency_type} Emergency by {self.reporting_student.student_number} at {self.created_at}"
 class EmergencyAccessLog(BaseModel):
     report = models.ForeignKey(EmergencyReport, on_delete=models.CASCADE, related_name='access_logs')
     accessed_by_uid = models.CharField(max_length=128) 

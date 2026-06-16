@@ -19,10 +19,10 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 # 1. HOST & CORS SECURITY FIX
 # No more wildcards. Explicitly define your domains in your server's environment variables.
-allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '127.0.0.1,localhost')
+allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '127.0.0.1,localhost,172.20.10.8')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
 
-cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
+cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,http://172.20.10.8,http://172.20.10.2:3000,http://172.20.10.2:8000')
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
 CORS_ALLOW_ALL_ORIGINS = True
 # Critical for React -> Django POST requests (Login/Register)

@@ -16,6 +16,7 @@ from .views import (
     RoomInspectionViewSet,
     RegisterLandlordView,
     NotificationViewSet,
+    create_emergency_report,
     login_user,
     ApplyAccommodationView,
     add_student_by_landlord,
@@ -54,9 +55,11 @@ router.register(r'medical-profiles', StudentMedicalProfileViewSet, basename='med
 router.register(r'emergencies', EmergencyReportViewSet, basename='emergency')
 
 router.register(r'medical-responders', MedicalResponderProfileViewSet)
-
 urlpatterns = [ 
-    path('', include(router.urls)), 
+    # 1. Custom endpoints go FIRST
+    path('emergencies/create/', create_emergency_report, name='create_emergency'),
+    path('emergencies/unlock-medical-data/', unlock_medical_data, name='unlock_medical_data'),
+    
     path('register-landlord/', RegisterLandlordView.as_view(), name='register_landlord'),
     path('student-self-register/', student_self_register, name='student_self_register'), 
     path('login/', login_user, name='login_user'),
@@ -73,8 +76,11 @@ urlpatterns = [
     path('students/<uuid:student_id>/decrypted-face/', views.fetch_decrypted_face, name='fetch_decrypted_face'),
     path('apply-accommodation/', ApplyAccommodationView.as_view(), name='apply-accommodation'),
     path('verify-landlord-identity-app/', verify_landlord_identity_app, name='verify_landlord_identity_app'),
-    path('emergencies/unlock-medical-data/', unlock_medical_data, name='unlock_medical_data'),
     path('add-medical-responder/', add_medical_responder, name='add_medical_responder'),
     path('verify-responder-login/', verify_responder_login, name='verify_responder_login'),
-    path('request-manual-review/', views.request_manual_review, name='request_manual_review'),
+    path('request-manual-review/', views.request_manual_review, name='request_manual_review'), 
+    path('serve-decrypted-file/', views.serve_decrypted_file_by_url, name='serve_decrypted_file_by_url'),
+
+    # 2. Generic router goes LAST so it doesn't swallow custom paths
+    path('', include(router.urls)), 
 ]

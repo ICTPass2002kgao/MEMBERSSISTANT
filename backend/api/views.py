@@ -1,5 +1,5 @@
 import os
-from time import timezone
+from django.utils import timezone
 import uuid
 import json
 import hmac
@@ -10,6 +10,8 @@ import requests
 import mimetypes
 import logging
 
+import numpy as np
+import face_recognition 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q, Avg, Count
@@ -20,15 +22,15 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes, authentication_classes, action, parser_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import IsAuthenticated, AllowAny 
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
-
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser 
+ 
 import firebase_admin
 from firebase_admin import auth, storage
 from cryptography.fernet import Fernet
-
+from PIL import Image, ImageOps
 # Custom Authentication & Permissions
 from .authentication import FirebaseAuthentication
 from .permissions import IsAttendant, IsLandlord
@@ -38,21 +40,34 @@ from .face_utils import perform_verification, decrypt_to_base64
 from .models import (
     AdminProfile, LandlordProfile, Block, Unit, Accommodation, Notification, Room, StudentProfile, 
     AttendantProfile, Issue, Charge, LeavePermit, RoomInspection, GatePass,
-    CampusLocation, StudentMedicalProfile, EmergencyReport, EmergencyAccessLog # NEW
+    CampusLocation, StudentMedicalProfile, EmergencyReport, EmergencyAccessLog
 )
 
 # Serializers
 from .serializers import (
-    AdminProfileSerializer, GatePassSerializer, LandlordProfileSerializer, BlockSerializer, UnitSerializer, AccommodationSerializer, 
+    AdminProfileSerializer, EmergencyAccessLogSerializer, GatePassSerializer, LandlordProfileSerializer, BlockSerializer, UnitSerializer, AccommodationSerializer, 
     RoomSerializer, StudentProfileSerializer, AttendantProfileSerializer, IssueSerializer, 
     ChargeSerializer, LeavePermitSerializer, RoomInspectionSerializer, NotificationSerializer,
-    CampusLocationSerializer, StudentMedicalProfileSerializer, EmergencyReportSerializer # NEW,
+    CampusLocationSerializer, StudentMedicalProfileSerializer, EmergencyReportSerializer
 )
 from .models import MedicalResponderProfile
 from .serializers import MedicalResponderProfileSerializer
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024  
+
+def _extract_blob_path(url):
+    """Helper to extract the relative storage blob path from a full public URL."""
+    if not url:
+        return url
+    try:
+        bucket_name = storage.bucket().name
+        if f"{bucket_name}/" in url:
+            return url.split(f"{bucket_name}/")[-1].split('?')[0]
+    except Exception as e:
+        logger.error(f"Error extracting blob path: {e}")
+    return url
+
 class BaseSecureViewSet(viewsets.ModelViewSet):
     authentication_classes = [FirebaseAuthentication]
     permission_classes = [IsAuthenticated]
@@ -61,19 +76,135 @@ class BaseSecureViewSet(viewsets.ModelViewSet):
 # NEW EMERGENCY AND MAPS LOGIC
 # ----------------------------------------------------------------------
 
-from .models import EmergencyAccessLog
-from .serializers import EmergencyAccessLogSerializer
+@api_view(['POST'])
+@authentication_classes([FirebaseAuthentication])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def create_emergency_report(request):
+    """Handles emergency creation and instant 1:N patient identification."""
+    try:
+        reporting_student = StudentProfile.objects.get(firebase_uid=request.user.firebase_uid)
+        situation_image = request.FILES.get('situation_image')
+        
+        if not situation_image:
+            return Response({"error": "Situation image required for patient identification."}, status=400)
+
+        # 1. Save temp image for the AI to process
+        temp_img = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
+        with open(temp_img, 'wb+') as f:
+            for chunk in situation_image.chunks(): f.write(chunk)
+
+       # ====================================================================
+        # 2. FAST 1:N AI IDENTIFICATION LOGIC & ENCODING CAPTURE
+        # ====================================================================
+        identified_patient_profile = None
+        face_encoding_string = "" 
+        
+        try:
+            # --- THE FIX: Force Upright Orientation & RGB Format ---
+            pil_image = Image.open(temp_img)
+            pil_image = ImageOps.exif_transpose(pil_image) # Auto-rotates upright based on EXIF
+            if pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB') # Strips mobile alpha/transparency channels
+            
+            # Convert to numpy array for the AI
+            live_image = np.array(pil_image) 
+            # -------------------------------------------------------
+
+            live_encodings = face_recognition.face_encodings(live_image)
+
+            if live_encodings:
+                live_encoding = live_encodings[0]
+                face_encoding_string = json.dumps(live_encoding.tolist()) 
+                print(f"✅ FACE DETECTED! Live encoding captured.") 
+                
+                best_match_id = None
+                min_distance = 0.55 
+                
+                students = StudentProfile.objects.exclude(face_encoding_json__isnull=True).exclude(face_encoding_json="")
+                
+                for student in students:
+                    try:
+                        db_encoding = np.array(json.loads(student.face_encoding_json))
+                        distance = face_recognition.face_distance([db_encoding], live_encoding)[0]
+                        
+                        if distance < min_distance:
+                            min_distance = distance
+                            best_match_id = student.id
+                    except Exception:
+                        continue
+                
+                if best_match_id:
+                    identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
+            else:
+                print("🚨 AI WARNING: STILL no face detected. The image is either too blurry, too dark, or doesn't contain a face.")
+                    
+        except Exception as e:
+            logger.error(f"AI Identification Failed: {e}", exc_info=True)
+
+        # ====================================================================
+        # 3. Encrypt and Upload the Image to Firebase
+        # ====================================================================
+        cipher_suite = Fernet(settings.FERNET_KEY)
+        encrypted_bytes = cipher_suite.encrypt(open(temp_img, 'rb').read())
+        filename = f"secure_emergencies/req_{uuid.uuid4().hex}.jpg.enc"
+        
+        bucket = storage.bucket()
+        blob = bucket.blob(filename)
+        blob.upload_from_string(encrypted_bytes, content_type='application/octet-stream')
+        blob.make_public()
+        image_url = blob.public_url
+
+        os.remove(temp_img)
+
+        # ====================================================================
+        # 4. Create the Report in the Database
+        # ====================================================================
+        emergency = EmergencyReport.objects.create(
+            reporting_student=reporting_student,
+            identified_patient=identified_patient_profile,
+            latitude=request.data.get('latitude', 0.0),
+            longitude=request.data.get('longitude', 0.0),
+            emergency_type=request.data.get('emergency_type', 'Other'),
+            description=request.data.get('description', ''),
+            situation_image_url=image_url,
+            face_encoding_json=face_encoding_string # Saved directly into the report
+        )
+
+        # ====================================================================
+        # 5. Alert Responders
+        # ====================================================================
+        patient_name = f"{identified_patient_profile.name} {identified_patient_profile.surname}" if identified_patient_profile else "Unidentified Student"
+        
+        staff_tokens = MedicalResponderProfile.objects.filter(is_active=True).exclude(fcm_token__isnull=True).values_list('fcm_token', flat=True)
+        if staff_tokens:
+            msg = messaging.MulticastMessage(
+                notification=messaging.Notification(
+                    title=f"CRITICAL: {emergency.emergency_type.upper()}", 
+                    body=f"Patient: {patient_name}. Tap to view location and file."
+                ),
+                tokens=list(staff_tokens),
+            )
+            messaging.send_multicast(msg)
+
+        return Response({"message": "Alert Sent."}, status=201)
+
+    except StudentProfile.DoesNotExist:
+        return Response({"error": "Auth error."}, status=403)
+    except Exception as e:
+        logger.error(f"Emergency Creation Error: {e}", exc_info=True)
+        return Response({"error": "Failed to dispatch emergency."}, status=500)
 
 class EmergencyAccessLogViewSet(BaseSecureViewSet):
     """Immutable POPIA audit logs for admin viewing."""
     queryset = EmergencyAccessLog.objects.select_related('student_accessed', 'report').all().order_by('-created_at')
     serializer_class = EmergencyAccessLogSerializer
     
-    # Disable POST, PUT, DELETE to make it completely immutable
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAdminUser()] # Or completely block it
+            return [permissions.IsAdminUser()]
         return super().get_permissions()
+
 class MedicalResponderProfileViewSet(viewsets.ModelViewSet):
     """Viewset for fetching and deleting medical responders."""
     queryset = MedicalResponderProfile.objects.all()
@@ -91,17 +222,13 @@ class MedicalResponderProfileViewSet(viewsets.ModelViewSet):
             logger.warning(f"Firebase warning during responder deletion: {str(e)}")
         self.perform_destroy(instance)
         return Response({"message": "Responder and Firebase account permanently deleted."}, status=status.HTTP_200_OK)
-
-
+    
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def add_medical_responder(request):
-    """
-    Securely registers a new Medical Responder.
-    Accepts raw face image, encrypts it on the server, uploads to Firebase, and links the URL.
-    """
+    """Securely registers a new Medical Responder and encrypts their biometrics."""
     id_number = request.data.get('id_number')
     name = request.data.get('name')
     email = request.data.get('email')
@@ -118,14 +245,12 @@ def add_medical_responder(request):
     password = id_number[:6]
     
     try: 
-        # Create user in Firebase Auth
         firebase_user = auth.create_user(email=email, password=password, display_name=f"{name} {surname}")
         
         try:
             with transaction.atomic():
                 face_url = None
                 
-                # Encrypt and upload image logic
                 if face_image:
                     file_bytes = face_image.read()
                     cipher_suite = Fernet(settings.FERNET_KEY)
@@ -141,7 +266,6 @@ def add_medical_responder(request):
 
                     face_url = blob.public_url 
 
-                # Save the new responder to the dedicated table
                 responder = MedicalResponderProfile.objects.create(
                     firebase_uid=firebase_user.uid, 
                     name=name, 
@@ -169,10 +293,7 @@ def add_medical_responder(request):
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def verify_responder_login(request):
-    """
-    Validates the live facial scan of a Medical Responder against their encrypted
-    reference photo in Firebase Storage before granting them access to the dashboard.
-    """
+    """Validates the live facial scan of a Medical Responder against their encrypted reference photo."""
     live_file = request.FILES.get('live_face')
     
     if not live_file:
@@ -182,7 +303,6 @@ def verify_responder_login(request):
         return Response({'error': 'Face image exceeds 5MB limit.'}, status=400)
 
     try:
-        # Fetch the responder using the decoded Firebase token
         responder = MedicalResponderProfile.objects.get(firebase_uid=request.user.firebase_uid)
         
         if not responder.face_url:
@@ -194,10 +314,9 @@ def verify_responder_login(request):
                 f.write(chunk)
                 
         try:
-            # Run the face verification (Decrypting the stored face safely in memory)
             result = perform_verification(
                 live_path=temp_live, 
-                ref_path=responder.face_url, 
+                ref_path=_extract_blob_path(responder.face_url), 
                 is_encrypted_ref=True
             )
             
@@ -218,6 +337,93 @@ def verify_responder_login(request):
     except Exception as e:
         logger.error(f"Responder Login Verification Error: {e}", exc_info=True)
         return Response({'error': 'An internal server error occurred during biometric verification.'}, status=500)
+
+@api_view(['POST'])
+@authentication_classes([FirebaseAuthentication])
+@permission_classes([IsAuthenticated])
+def unlock_medical_data(request):
+    """Simplified Security Protocol. Staff confirms access, generates audit log, decrypts POPIA health data and retrieves full student profile."""
+    report_id = request.data.get('report_id')
+    patient_id = request.data.get('patient_id') # Pull the ID sent from Flutter
+
+    if not report_id:
+        return Response({'error': 'Missing report ID.'}, status=400)
+
+    try:
+        report = EmergencyReport.objects.get(id=report_id)
+        staff_user = request.user 
+        
+        # Use the explicit patient_id if provided, otherwise fallback to the AI identified patient
+        if patient_id:
+            try:
+                target_student = StudentProfile.objects.get(id=patient_id)
+            except StudentProfile.DoesNotExist:
+                return Response({'error': 'Patient not found in system.'}, status=404)
+        else:
+            target_student = report.identified_patient
+            
+        if not target_student:
+            return Response({'error': 'No patient identified in this report.'}, status=404)
+
+        # Audit Log Generation (Cannot be bypassed)
+        with transaction.atomic():
+            EmergencyAccessLog.objects.create(
+                report=report,
+                accessed_by_uid=staff_user.firebase_uid,
+                student_accessed=target_student # Log the correct victim!
+            )
+            
+            # --- NEW: Safely extract room and block data from the StudentProfile ---
+            room_number = "Unassigned"
+            block_name = "Unassigned Block"
+            
+            if target_student.room:
+                room_number = target_student.room.room_number
+                if hasattr(target_student.room, 'unit') and target_student.room.unit and target_student.room.unit.block:
+                    block_name = target_student.room.unit.block.name
+                elif target_student.room.block:
+                    block_name = target_student.room.block.name
+            
+            # Fetch and Decrypt Data
+            try:
+                medical_profile = StudentMedicalProfile.objects.get(student=target_student)
+                return Response({
+                    # --- INJECTING FULL STUDENT DETAILS ---
+                    "student_name": f"{target_student.name} {target_student.surname}",
+                    "student_number": target_student.student_number,
+                    "face_url": target_student.face_url,
+                    "room_number": room_number,
+                    "block_name": block_name,
+                    # ----------------------------------------
+                    "blood_type": medical_profile.blood_type,
+                    "allergies": medical_profile.allergies,
+                    "medical_conditions": medical_profile.medical_conditions,
+                    "emergency_contact_name": medical_profile.emergency_contact_name,
+                    "emergency_contact_phone": medical_profile.emergency_contact_phone,
+                    "emergency_contact_relation": medical_profile.emergency_contact_relation
+                }, status=200)
+                
+            except StudentMedicalProfile.DoesNotExist:
+                # NEW: Return the identity & room data even if they skipped the medical form!
+                return Response({
+                    "student_name": f"{target_student.name} {target_student.surname}",
+                    "student_number": target_student.student_number,
+                    "face_url": target_student.face_url,
+                    "room_number": room_number,
+                    "block_name": block_name,
+                    "blood_type": "Unknown",
+                    "allergies": "No profile recorded",
+                    "medical_conditions": "No profile recorded",
+                    "emergency_contact_name": "N/A",
+                    "emergency_contact_phone": "N/A",
+                    "emergency_contact_relation": "N/A"
+                }, status=200)
+
+    except EmergencyReport.DoesNotExist:
+        return Response({'error': 'Emergency report not found.'}, status=404)
+    except Exception as e:
+        logger.error(f"Medical Access Error: {e}", exc_info=True)
+        return Response({'error': 'An internal server error occurred.'}, status=500)     
 class CampusLocationViewSet(BaseSecureViewSet):
     """Provides coordinates for the mobile frontend maps SDK."""
     queryset = CampusLocation.objects.all()
@@ -227,7 +433,7 @@ class CampusLocationViewSet(BaseSecureViewSet):
 
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [IsAuthenticated(), IsLandlord()] # Only admins/landlords can add pins
+            return [IsAuthenticated(), IsLandlord()] 
         return [IsAuthenticated()]
 
 class StudentMedicalProfileViewSet(BaseSecureViewSet):
@@ -245,45 +451,21 @@ class StudentMedicalProfileViewSet(BaseSecureViewSet):
             serializer.save(student=student)
         except StudentProfile.DoesNotExist:
             raise ValidationError({"error": "Only student profiles can update medical data."})
-
+        
 class EmergencyReportViewSet(BaseSecureViewSet):
-    """Handles student-initiated panic alerts with GPS pinpointing."""
+    """Handles student-initiated panic alerts with GPS pinpointing and images."""
     queryset = EmergencyReport.objects.select_related('reporting_student', 'resolved_by').all().order_by('-created_at')
     serializer_class = EmergencyReportSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status']
-
-    def perform_create(self, serializer):
-        try:
-            student = StudentProfile.objects.get(firebase_uid=self.request.user.firebase_uid)
-            emergency = serializer.save(reporting_student=student)
-
-            # Instantly alert Security and Attendants
-            staff_tokens = AttendantProfile.objects.exclude(fcm_token__isnull=True).exclude(fcm_token__exact='').values_list('fcm_token', flat=True)
-            
-            if staff_tokens:
-                multicast_msg = messaging.MulticastMessage(
-                    notification=messaging.Notification(
-                        title="MEDICAL EMERGENCY ALERT", 
-                        body=f"Student {student.name} {student.surname} reported an emergency. Tap for live GPS."
-                    ),
-                    data={
-                        "report_id": str(emergency.id),
-                        "latitude": str(emergency.latitude),
-                        "longitude": str(emergency.longitude)
-                    },
-                    tokens=list(staff_tokens),
-                )
-                messaging.send_multicast(multicast_msg)
-
-        except StudentProfile.DoesNotExist:
-            raise ValidationError({"error": "Only authenticated students can trigger an emergency."})
-
+    
+    parser_classes = [MultiPartParser, FormParser, JSONParser] 
+      
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
-def unlock_medical_data(request):
+def unlock_medical_data_dual(request):
     """
     The Dual-Scan Security Protocol. 
     Requires Staff Face + Student Face matching to generate an audit log and decrypt POPIA health data.
@@ -317,17 +499,14 @@ def unlock_medical_data(request):
             with open(temp_student, 'wb+') as f:
                 for chunk in student_face.chunks(): f.write(chunk)
                 
-            # Scan 1: Verify Staff Identity
-            staff_result = perform_verification(live_path=temp_staff, ref_path=staff_user.face_url, is_encrypted_ref=True)
+            staff_result = perform_verification(live_path=temp_staff, ref_path=_extract_blob_path(staff_user.face_url), is_encrypted_ref=True)
             if not staff_result.get('matched'):
                 return Response({'error': 'Responder biometric verification failed. Access Denied.'}, status=403)
 
-            # Scan 2: Verify Student Identity
-            student_result = perform_verification(live_path=temp_student, ref_path=student.face_url, is_encrypted_ref=True)
+            student_result = perform_verification(live_path=temp_student, ref_path=_extract_blob_path(student.face_url), is_encrypted_ref=True)
             if not student_result.get('matched'):
                 return Response({'error': 'Student biometric verification failed. Ensure you are scanning the correct patient.'}, status=403)
             
-            # Audit Log Generation (Cannot be bypassed)
             with transaction.atomic():
                 EmergencyAccessLog.objects.create(
                     report=report,
@@ -335,7 +514,6 @@ def unlock_medical_data(request):
                     student_accessed=student
                 )
                 
-                # Fetch and Decrypt Data
                 try:
                     medical_profile = StudentMedicalProfile.objects.get(student=student)
                     return Response({
@@ -369,11 +547,6 @@ def unlock_medical_data(request):
 @permission_classes([IsAuthenticated, IsLandlord])
 @parser_classes([MultiPartParser, FormParser]) 
 def verify_landlord_identity_app(request):
-    """
-    Handles secure identity document uploads from the Flutter mobile app.
-    Encrypts files using Fernet before streaming them directly to Firebase Storage,
-    preserving original file extensions for correct MIME type resolution.
-    """
     landlord = getattr(request.user, 'landlord_profile', None)
     if not landlord:
         return Response({'error': 'User profile is not registered as a landlord.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -389,7 +562,6 @@ def verify_landlord_identity_app(request):
         cipher_suite = Fernet(settings.FERNET_KEY)
         bucket = storage.bucket()
 
-        # 1. Encrypt and Upload Face (Enforced as .jpg.enc)
         live_face.seek(0)
         face_blob_name = f"secure_faces/landlord_{landlord.id}_live_{uuid.uuid4().hex}.jpg.enc"
         face_blob = bucket.blob(face_blob_name)
@@ -400,11 +572,10 @@ def verify_landlord_identity_app(request):
         face_blob.make_public()
         landlord.face_url = face_blob.public_url
 
-        # 2. Encrypt and Upload ID Document (Dynamically retains .pdf, .jpg, .png, etc.)
         id_document.seek(0)
         id_ext = os.path.splitext(id_document.name)[1].lower()
         if not id_ext:
-            id_ext = '.jpg'  # Fallback security default
+            id_ext = '.jpg'  
         id_blob_name = f"secure_docs/landlord_{landlord.id}_id_{uuid.uuid4().hex}{id_ext}.enc"
         id_blob = bucket.blob(id_blob_name)
         id_blob.upload_from_string(
@@ -414,7 +585,6 @@ def verify_landlord_identity_app(request):
         id_blob.make_public()
         landlord.id_document_url = id_blob.public_url
 
-        # 3. Encrypt and Upload Contract (Dynamically retains extension, typically .pdf)
         contract_file.seek(0)
         contract_ext = os.path.splitext(contract_file.name)[1].lower()
         if not contract_ext:
@@ -428,8 +598,7 @@ def verify_landlord_identity_app(request):
         contract_blob.make_public()
         landlord.contract_url = contract_blob.public_url
 
-        # Save the updated URLs to the landlord record
-        landlord.is_identity_verified = False  # Set to false pending admin review
+        landlord.is_identity_verified = False  
         landlord.save()
 
         return Response({
@@ -443,7 +612,6 @@ def verify_landlord_identity_app(request):
         logger.error(f"Error during landlord verification asset upload: {e}", exc_info=True)
         return Response({'error': 'Internal server error processing security files.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# NEW ENDPOINT: Triggered only when the user specifically selects "Manual Review" in the app dialog
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated, IsLandlord])
@@ -503,6 +671,7 @@ def verify_permit_qr(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @authentication_classes([FirebaseAuthentication])
+@parser_classes([MultiPartParser, FormParser])
 def verify_face_match(request):
     permit_id = request.data.get('permit_id')
     live_file = request.FILES.get('live_face')
@@ -528,7 +697,7 @@ def verify_face_match(request):
         try:
             result = perform_verification(
                 live_path=temp_live, 
-                ref_path=student.face_url, 
+                ref_path=_extract_blob_path(student.face_url), 
                 is_encrypted_ref=True
             )
             
@@ -600,10 +769,6 @@ class LandlordProfileViewSet(BaseSecureViewSet):
 
     @action(detail=True, methods=['get'], url_path='decrypted-document')
     def get_decrypted_document(self, request, pk=None):
-        """
-        Retrieves, decrypts, and serves an admin-requested landlord credential asset.
-        Resolves accurate MIME types naturally based on the preserved storage extensions.
-        """
         import requests
         import base64
         import mimetypes
@@ -629,15 +794,12 @@ class LandlordProfileViewSet(BaseSecureViewSet):
             if resp.status_code != 200:
                 return Response({'error': 'Failed to stream asset payload from storage cluster.'}, status=status.HTTP_404_NOT_FOUND)
             
-            # Decrypt payload using server cluster key
             cipher_suite = Fernet(settings.FERNET_KEY)
             decrypted_data = cipher_suite.decrypt(resp.content)
             
-            # Extract extension by removing query tokens and the encryption suffix
             filename = file_url.split('?')[0].replace('.enc', '')
             mime_type, _ = mimetypes.guess_type(filename)
             
-            # Fallback block if the file metadata structure is missing extensions
             if not mime_type:
                 if doc_type == 'face':
                     mime_type = 'image/jpeg'
@@ -646,7 +808,6 @@ class LandlordProfileViewSet(BaseSecureViewSet):
                 else:
                     mime_type = 'application/octet-stream'
 
-            # Pack raw decrypted stream safely into Base64 for JSON serialization
             doc_base64 = base64.b64encode(decrypted_data).decode('utf-8')
             
             return Response({
@@ -657,6 +818,7 @@ class LandlordProfileViewSet(BaseSecureViewSet):
         except Exception as e:
             logger.error(f"Landlord Secure Decryption Core Failure: {e}", exc_info=True)
             return Response({'error': 'Decryption pipeline aborted due to an internal execution error.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class BlockViewSet(BaseSecureViewSet):
     queryset = Block.objects.all()
     serializer_class = BlockSerializer
@@ -669,8 +831,10 @@ class UnitViewSet(BaseSecureViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['block__id', 'block__accommodation__id']
 
+
 class AccommodationViewSet(BaseSecureViewSet):
     serializer_class = AccommodationSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser] 
 
     def get_queryset(self):
         return Accommodation.objects.filter(landlord__is_verified=True)
@@ -684,6 +848,35 @@ class AccommodationViewSet(BaseSecureViewSet):
         if self.request and self.request.method == 'GET':
             return [AllowAny()]
         return super().get_permissions()
+
+    def _handle_logo_upload(self, instance, request):
+        logo_file = request.FILES.get('accommodation_logo')
+        if logo_file:
+            if logo_file.size > 5 * 1024 * 1024:  
+                raise ValidationError({"error": "Logo image exceeds the 5MB limit."})
+            
+            try:
+                ext = os.path.splitext(logo_file.name)[1]
+                filename = f"public_logos/acc_{instance.id}_{uuid.uuid4().hex}{ext}"
+                
+                bucket = storage.bucket()
+                blob = bucket.blob(filename)
+                blob.upload_from_file(logo_file.file, content_type=logo_file.content_type)
+                blob.make_public()
+                
+                instance.accommodation_logo_url = blob.public_url
+                instance.save()
+            except Exception as e:
+                logger.error(f"Failed to upload accommodation logo: {e}", exc_info=True)
+
+    def perform_create(self, serializer):
+        landlord = LandlordProfile.objects.filter(firebase_uid=self.request.user.firebase_uid).first()
+        instance = serializer.save(landlord=landlord)
+        self._handle_logo_upload(instance, self.request)
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        self._handle_logo_upload(instance, self.request)
     
 class RoomViewSet(BaseSecureViewSet):
     queryset = Room.objects.all()
@@ -723,11 +916,30 @@ class StudentProfileViewSet(BaseSecureViewSet):
     def perform_update(self, serializer):
         instance = serializer.save()
         face_image = self.request.FILES.get('face_image')
+        
         if face_image:
             if face_image.size > MAX_UPLOAD_SIZE:
                 raise ValidationError({"error": "Face image exceeds the 5MB size limit."})
+            
             try:
                 file_bytes = face_image.read()
+                
+                temp_face = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
+                with open(temp_face, 'wb+') as f:
+                    f.write(file_bytes)
+                
+                try:
+                    import face_recognition
+                    img_data = face_recognition.load_image_file(temp_face)
+                    encodings = face_recognition.face_encodings(img_data)
+                    if encodings:
+                        instance.face_encoding_json = json.dumps(encodings[0].tolist())
+                except Exception as e:
+                    logger.error(f"Failed to generate face encoding during update: {e}")
+                finally:
+                    if os.path.exists(temp_face):
+                        os.remove(temp_face)
+
                 cipher_suite = Fernet(settings.FERNET_KEY)
                 encrypted_bytes = cipher_suite.encrypt(file_bytes)
                 ext = os.path.splitext(face_image.name)[1]
@@ -742,6 +954,7 @@ class StudentProfileViewSet(BaseSecureViewSet):
                 instance.save()
             except Exception as e:
                 logger.error(f"Firebase Facial Upload Error: {str(e)}", exc_info=True)
+                raise ValidationError({"error": "Failed to process and secure the facial biometric data."})
                 
     @action(detail=True, methods=['get'], url_path='decrypted-document')
     def get_decrypted_document(self, request, pk=None):
@@ -923,6 +1136,7 @@ class RoomInspectionViewSet(BaseSecureViewSet):
     serializer_class = RoomInspectionSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['is_damage_found', 'attendant__firebase_uid', 'permit__student__firebase_uid']
+
 class GatePassViewSet(BaseSecureViewSet):
     queryset = GatePass.objects.all()
     serializer_class = GatePassSerializer
@@ -931,19 +1145,15 @@ class GatePassViewSet(BaseSecureViewSet):
 
     def perform_create(self, serializer):
         try:
-            # 1. Try to auto-assign if the requester is a student
             student = StudentProfile.objects.get(firebase_uid=self.request.user.firebase_uid)
             serializer.save(student=student)
             
         except StudentProfile.DoesNotExist: 
-            # 2. Fallback for Landlords
             raw_data = self.request.data
             
-            # Safely check for 'student' or 'student_id' 
             student_id = raw_data.get('student') or raw_data.get('student_id')
             
             if not student_id:
-                # THIS IS THE MAGIC LINE: It will now tell you EXACTLY what Django received
                 raise ValidationError({"error": f"Student missing. Payload received by Django: {raw_data}"})
             
             try:
@@ -954,6 +1164,7 @@ class GatePassViewSet(BaseSecureViewSet):
                 
         except AttributeError:
             raise ValidationError({"error": "Authentication token missing valid UID."})
+
 class NotificationViewSet(BaseSecureViewSet):
     serializer_class = NotificationSerializer
     filter_backends = [DjangoFilterBackend]
@@ -1091,7 +1302,12 @@ def login_user(request):
         if student:
             serializer = StudentProfileSerializer(student)
             return Response({"message": "Login successful", "role": "student", "user_data": serializer.data }, status=200) 
-            
+       
+        responder = MedicalResponderProfile.objects.filter(firebase_uid=firebase_uid).first()
+        if responder:
+            serializer = MedicalResponderProfileSerializer(responder)
+            return Response({"message": "Login successful", "role": "responder", "user_data": serializer.data}, status=200)
+        
         attendant = AttendantProfile.objects.filter(firebase_uid=firebase_uid).first()
         if attendant:
             serializer = AttendantProfileSerializer(attendant)
@@ -1453,9 +1669,26 @@ def add_student_by_landlord(request):
                         raise ValueError("Invalid Room ID provided. Room does not exist.") 
 
                 face_url = None
+                face_encoding_string = "" 
                 
                 if face_image:
                     file_bytes = face_image.read()
+                    
+                    temp_face = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
+                    with open(temp_face, 'wb+') as f:
+                        f.write(file_bytes)
+                    
+                    try:
+                        import face_recognition
+                        img_data = face_recognition.load_image_file(temp_face)
+                        encodings = face_recognition.face_encodings(img_data)
+                        if encodings:
+                            face_encoding_string = json.dumps(encodings[0].tolist())
+                    except Exception as e:
+                        logger.error(f"Failed to generate face encoding: {e}")
+                    finally:
+                        os.remove(temp_face)
+
                     cipher_suite = Fernet(settings.FERNET_KEY)
                     encrypted_bytes = cipher_suite.encrypt(file_bytes)
 
@@ -1468,13 +1701,13 @@ def add_student_by_landlord(request):
                     blob.make_public()
 
                     face_url = blob.public_url 
-        
+
                 student = StudentProfile.objects.create(
                     landlord=landlord, firebase_uid=firebase_user.uid, name=name, surname=surname,
                     email=email, student_number=student_number, id_number=id_number, phone=phone,
                     room=room, face_url=face_url, requires_password_change=True,
-                    verification_status=False 
-                )
+                    verification_status=False,
+                    face_encoding_json=face_encoding_string     )
 
                 return Response({"message": "Student successfully registered and face encrypted.", "student_id": student.id}, status=201)
                 
@@ -1582,6 +1815,7 @@ def student_self_register(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @authentication_classes([FirebaseAuthentication])
+@parser_classes([MultiPartParser, FormParser])
 def verify_student_presence(request, student_id):
     live_file = request.FILES.get('live_face')
 
@@ -1605,7 +1839,7 @@ def verify_student_presence(request, student_id):
         try:
             result = perform_verification(
                 live_path=temp_live, 
-                ref_path=student.face_url, 
+                ref_path=_extract_blob_path(student.face_url), 
                 is_encrypted_ref=True
             )
             
@@ -1684,3 +1918,44 @@ class ApplyAccommodationView(APIView):
         )
 
         return Response({"message": "Application processed successfully."}, status=status.HTTP_201_CREATED)
+    
+import urllib.parse
+from django.http import HttpResponse
+
+@api_view(['GET'])
+@permission_classes([AllowAny]) # Token is verified manually in the code
+def serve_decrypted_file_by_url(request):
+    """
+    Universally takes an encrypted Firebase URL, decrypts it on the fly, 
+    and serves the raw image bytes.
+    """
+    token = request.query_params.get('token')
+    file_url = request.query_params.get('file_url')
+    
+    if not token or not file_url:
+        return HttpResponse("Unauthorized: Missing token or file_url", status=401)
+        
+    try:
+        # 1. Verify the user is authenticated
+        auth.verify_id_token(token)
+        
+        # 2. Decode the Firebase URL (since it has to be URL-encoded to pass as a parameter)
+        decoded_file_url = urllib.parse.unquote(file_url)
+            
+        # 3. Fetch encrypted bytes from Firebase Storage
+        resp = requests.get(decoded_file_url)
+        if resp.status_code != 200:
+            return HttpResponse("Encrypted file not found in storage.", status=404)
+            
+        # 4. Decrypt the bytes
+        cipher_suite = Fernet(settings.FERNET_KEY)
+        decrypted_data = cipher_suite.decrypt(resp.content)
+        
+        # 5. Serve the raw image bytes exactly like an image hosting server
+        return HttpResponse(decrypted_data, content_type="image/jpeg")
+        
+    except auth.InvalidIdTokenError:
+        return HttpResponse("Unauthorized: Invalid token", status=401)
+    except Exception as e:
+        logger.error(f"Universal Image Decryption Error: {e}", exc_info=True)
+        return HttpResponse("Internal Server Error", status=500)

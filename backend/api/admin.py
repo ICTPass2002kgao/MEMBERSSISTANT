@@ -13,7 +13,13 @@ from .models import (
     RoomInspection,
     LandlordProfile,
     Notification,
-    GatePass
+    GatePass,
+    # --- NEW MODELS ---
+    CampusLocation,
+    StudentMedicalProfile,
+    MedicalResponderProfile,
+    EmergencyReport,
+    EmergencyAccessLog
 )
 
 @admin.register(AdminProfile)
@@ -107,3 +113,48 @@ class GatePassAdmin(admin.ModelAdmin):
     list_display = ('student', 'asset_name', 'is_active', 'expires_at')
     search_fields = ('student__student_number', 'asset_name', 'asset_number')
     list_filter = ('is_active',)
+
+# ==============================================================================
+# NEW EMERGENCY & MAP MODELS
+# ==============================================================================
+
+@admin.register(CampusLocation)
+class CampusLocationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'location_type', 'latitude', 'longitude')
+    search_fields = ('name',)
+    list_filter = ('location_type',)
+
+@admin.register(StudentMedicalProfile)
+class StudentMedicalProfileAdmin(admin.ModelAdmin):
+    # Keeping display minimal because fields are encrypted
+    list_display = ('student', 'created_at', 'updated_at')
+    search_fields = ('student__student_number', 'student__name', 'student__surname')
+
+@admin.register(MedicalResponderProfile)
+class MedicalResponderProfileAdmin(admin.ModelAdmin):
+    list_display = ('name', 'surname', 'email', 'is_active')
+    search_fields = ('name', 'surname', 'email', 'firebase_uid')
+    list_filter = ('is_active',)
+
+@admin.register(EmergencyReport)
+class EmergencyReportAdmin(admin.ModelAdmin):
+    list_display = ('emergency_type', 'reporting_student', 'status', 'resolved_by', 'created_at')
+    search_fields = ('reporting_student__student_number', 'emergency_type', 'description')
+    list_filter = ('status', 'emergency_type')
+    readonly_fields = ('created_at', 'updated_at')
+
+@admin.register(EmergencyAccessLog)
+class EmergencyAccessLogAdmin(admin.ModelAdmin):
+    list_display = ('report', 'student_accessed', 'accessed_by_uid', 'created_at')
+    search_fields = ('accessed_by_uid', 'student_accessed__student_number')
+    list_filter = ('created_at',)
+    
+    # Audit logs should be strictly read-only to maintain compliance
+    def has_add_permission(self, request):
+        return False
+        
+    def has_change_permission(self, request, obj=None):
+        return False
+        
+    def has_delete_permission(self, request, obj=None):
+        return False

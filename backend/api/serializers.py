@@ -183,16 +183,29 @@ class StudentMedicalProfileSerializer(serializers.ModelSerializer):
         model = StudentMedicalProfile
         fields = '__all__'
         read_only_fields = ['student']
-
+# Update inside serializers.py
 class EmergencyReportSerializer(serializers.ModelSerializer):
-    student_name = serializers.CharField(source='reporting_student.name', read_only=True)
-    student_surname = serializers.CharField(source='reporting_student.surname', read_only=True)
+    reporter_name = serializers.CharField(source='reporting_student.name', read_only=True)
+    
+    # We pull all details from the IDENTIFIED PATIENT, not the reporter
+    patient_name = serializers.SerializerMethodField()
+    patient_room = serializers.SerializerMethodField()
+    patient_id = serializers.CharField(source='identified_patient.id', read_only=True)
     
     class Meta:
         model = EmergencyReport
         fields = '__all__'
-        read_only_fields = ['reporting_student', 'status', 'resolved_by']
+        read_only_fields = ['reporting_student', 'status', 'resolved_by', 'identified_patient']
 
+    def get_patient_name(self, obj):
+        if obj.identified_patient:
+            return f"{obj.identified_patient.name} {obj.identified_patient.surname}"
+        return "Unidentified Patient"
+
+    def get_patient_room(self, obj):
+        if obj.identified_patient and obj.identified_patient.room:
+            return obj.identified_patient.room.room_number
+        return "Unknown Room"
 class EmergencyAccessLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmergencyAccessLog
