@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/* This single import handles everything in Tailwind v4 */
+
+:root {
+  --background: #040C34;
+  --foreground: #f1f5f9;
+  --accent-blue: #3b82f6;
+}
+
+@theme {
+  /* This maps your Next.js fonts to Tailwind */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-primary: #040C34;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  /* Use the Geist font from your Layout */
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui;
+  min-height: 100vh;
+  margin: 0;
+  /* Premium radial gradient */
+  background-image: radial-gradient(circle at 50% 0%, #1e3a8a 0%, transparent 50%);
+}
+
+/* Re-add your glass effects cleanly */
+.glass-panel {
+  background: #111827b3;
+  backdrop-filter: blur(12px);
+  border: 1px solid #f5f5f514;
+}
