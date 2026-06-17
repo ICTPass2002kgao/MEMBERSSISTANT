@@ -26,7 +26,10 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser 
- 
+
+import urllib.parse
+from django.http import HttpResponse
+
 import firebase_admin
 from firebase_admin import auth, storage
 from cryptography.fernet import Fernet
@@ -40,7 +43,7 @@ from .face_utils import perform_verification, decrypt_to_base64
 from .models import (
     AdminProfile, LandlordProfile, Block, Unit, Accommodation, Notification, Room, StudentProfile, 
     AttendantProfile, Issue, Charge, LeavePermit, RoomInspection, GatePass,
-    CampusLocation, StudentMedicalProfile, EmergencyReport, EmergencyAccessLog
+    CampusLocation, StudentMedicalProfile, EmergencyReport, EmergencyAccessLog, VisitorAuditLog, VisitorRegister
 )
 
 # Serializers
@@ -48,7 +51,7 @@ from .serializers import (
     AdminProfileSerializer, EmergencyAccessLogSerializer, GatePassSerializer, LandlordProfileSerializer, BlockSerializer, UnitSerializer, AccommodationSerializer, 
     RoomSerializer, StudentProfileSerializer, AttendantProfileSerializer, IssueSerializer, 
     ChargeSerializer, LeavePermitSerializer, RoomInspectionSerializer, NotificationSerializer,
-    CampusLocationSerializer, StudentMedicalProfileSerializer, EmergencyReportSerializer
+    CampusLocationSerializer, StudentMedicalProfileSerializer, EmergencyReportSerializer, VisitorRegisterSerializer
 )
 from .models import MedicalResponderProfile
 from .serializers import MedicalResponderProfileSerializer
@@ -647,7 +650,15 @@ def verify_permit_qr(request):
             'status': permit.status,
             'student_name': f"{student.name} {student.surname}",
             'student_number': getattr(student, 'student_number', 'N/A'),
-            'destination': permit.destination_province,
+            
+            # --- NEW EXTENDED DATA FOR UI ---
+            'destination_province': permit.destination_province,
+            'destination_address': permit.destination_address,
+            'departure_date': permit.departure_date.isoformat() if permit.departure_date else None,
+            'reason': permit.reason,
+            'parent_cell_number': permit.parent_cell_number,
+            # ---------------------------------
+            
             'face_url': None, 
         }
         
@@ -666,8 +677,6 @@ def verify_permit_qr(request):
     except Exception as e:
         logger.error(f"QR Verification Error: {e}", exc_info=True)
         return Response({'error': 'An internal server error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @authentication_classes([FirebaseAuthentication])
@@ -1919,9 +1928,6 @@ class ApplyAccommodationView(APIView):
 
         return Response({"message": "Application processed successfully."}, status=status.HTTP_201_CREATED)
     
-import urllib.parse
-from django.http import HttpResponse
-
 @api_view(['GET'])
 @permission_classes([AllowAny]) # Token is verified manually in the code
 def serve_decrypted_file_by_url(request):
@@ -1959,3 +1965,121 @@ def serve_decrypted_file_by_url(request):
     except Exception as e:
         logger.error(f"Universal Image Decryption Error: {e}", exc_info=True)
         return HttpResponse("Internal Server Error", status=500)
+
+
+class VisitorRegisterViewSet(BaseSecureViewSet):
+    serializer_class = VisitorRegisterSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['status']
+
+    def get_queryset(self):
+        uid = getattr(self.request.user, 'firebase_uid', None)
+        if hasattr(self.request.user, 'role'): 
+            return VisitorRegister.objects.all().order_by('-created_at')
+        return VisitorRegister.objects.filter(student__firebase_uid=uid).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        uid = getattr(self.request.user, 'firebase_uid', None)
+        try:
+            student = StudentProfile.objects.get(firebase_uid=uid)
+            
+            # STRICT ENFORCEMENT: Check for active visitors
+            has_active_visitor = VisitorRegister.objects.filter(
+                student=student, 
+                status__in=['PENDING', 'SIGNED_IN']
+            ).exists()
+            
+            if has_active_visitor:
+                raise ValidationError({"error": "You currently have an active visitor. They must sign out before you can register another."})
+                
+            serializer.save(student=student)
+        except StudentProfile.DoesNotExist:
+            raise ValidationError({"error": "Authenticated user does not have an associated student profile."})
+@api_view(['POST'])
+@authentication_classes([FirebaseAuthentication])
+@permission_classes([IsAuthenticated]) 
+def scan_visitor_qr(request):
+    """Security endpoint strictly enforcing radio button selections and auditing."""
+    qr_reference = request.data.get('qr_reference')
+    action = request.data.get('action') # 'SIGN_IN', 'SIGN_OUT', or 'VERIFY'
+
+    if not qr_reference or not action:
+        return Response({'error': 'QR reference and specific action are strictly required.'}, status=400)
+
+    try:
+        visitor = VisitorRegister.objects.select_related('student__room__block').get(qr_reference=qr_reference)
+        current_time = timezone.now()
+        
+        # Security Officer Identification
+        try:
+            security_officer = AttendantProfile.objects.get(firebase_uid=request.user.firebase_uid)
+        except AttendantProfile.DoesNotExist:
+            return Response({'error': 'Unauthorized. Only security personnel can perform this action.'}, status=403)
+
+        # STRICT STATE ENFORCEMENT
+        if action == 'SIGN_IN':
+            if visitor.status != 'PENDING':
+                return Response({'error': f'Cannot sign in. Visitor is currently: {visitor.status}'}, status=400)
+            
+            visitor.time_in = current_time
+            visitor.status = 'SIGNED_IN'
+            message = "Sign In Successful. Retain ID Card."
+            
+            VisitorAuditLog.objects.create(
+                visitor_record=visitor, security_officer=security_officer,
+                student=visitor.student, action_taken='SIGNED_IN'
+            )
+
+        elif action == 'SIGN_OUT':
+            if visitor.status == 'PENDING':
+                return Response({'error': 'Cannot sign out. Visitor has never signed in.'}, status=400)
+            if visitor.status == 'SIGNED_OUT':
+                return Response({'error': 'Visitor has already been signed out.'}, status=400)
+            
+            visitor.time_out = current_time
+            visitor.status = 'SIGNED_OUT'
+            message = "Sign Out Successful. Return ID Card."
+            
+            VisitorAuditLog.objects.create(
+                visitor_record=visitor, security_officer=security_officer,
+                student=visitor.student, action_taken='SIGNED_OUT'
+            )
+            
+        elif action == 'VERIFY':
+            message = "Visitor Details Verified."
+            
+        else:
+            return Response({'error': 'Invalid action requested.'}, status=400)
+
+        visitor.save()
+        
+        serializer = VisitorRegisterSerializer(visitor)
+        return Response({'message': message, 'visitor': serializer.data}, status=200)
+
+    except VisitorRegister.DoesNotExist:
+        return Response({'error': 'INVALID OR UNRECOGNIZED QR CODE.'}, status=404)
+    except Exception as e:
+        logger.error(f"Visitor Scan Error: {e}", exc_info=True)
+        return Response({'error': 'An internal server error occurred.'}, status=500)
+from .models import VisitorAuditLog
+from .serializers import VisitorAuditLogSerializer
+
+class VisitorAuditLogViewSet(BaseSecureViewSet):
+    """
+    Provides an immutable audit trail of all visitor check-ins and check-outs.
+    """
+    serializer_class = VisitorAuditLogSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Landlords only see logs for students in their accommodations
+        if isinstance(user, LandlordProfile):
+            return VisitorAuditLog.objects.filter(student__landlord=user).order_by('-created_at')
+            
+        # Security/Attendants see logs they created
+        elif isinstance(user, AttendantProfile):
+            return VisitorAuditLog.objects.filter(security_officer=user).order_by('-created_at')
+            
+        # Admins see everything
+        return VisitorAuditLog.objects.all().order_by('-created_at')

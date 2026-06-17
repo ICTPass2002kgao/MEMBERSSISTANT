@@ -17,7 +17,9 @@ from .models import (
     CampusLocation,
     StudentMedicalProfile,
     EmergencyReport,
-    EmergencyAccessLog
+    EmergencyAccessLog,
+    VisitorAuditLog,
+    VisitorRegister
 ) 
 
 class AdminProfileSerializer(serializers.ModelSerializer):
@@ -232,3 +234,43 @@ class EmergencyAccessLogSerializer(serializers.ModelSerializer):
 
     def get_student_name(self, obj):
         return f"{obj.student_accessed.name} {obj.student_accessed.surname}"
+    
+class VisitorRegisterSerializer(serializers.ModelSerializer):
+    student_name = serializers.CharField(source='student.name', read_only=True)
+    student_surname = serializers.CharField(source='student.surname', read_only=True)
+    room_number = serializers.CharField(source='student.room.room_number', read_only=True, default="Unassigned")
+    block_name = serializers.CharField(source='student.room.block.name', read_only=True, default="Unassigned")
+
+    class Meta:
+        model = VisitorRegister
+        fields = '__all__'
+        read_only_fields = ['student', 'qr_reference', 'time_in', 'time_out', 'status']
+          
+
+class VisitorAuditLogSerializer(serializers.ModelSerializer):
+    security_officer = serializers.SerializerMethodField()
+    visitor_record = serializers.SerializerMethodField()
+    student = serializers.SerializerMethodField()
+    
+    # NEW: Pull Room and Block directly into the audit log
+    room_number = serializers.CharField(source='student.room.room_number', read_only=True, default="N/A")
+    block_name = serializers.CharField(source='student.room.block.name', read_only=True, default="N/A")
+
+    class Meta:
+        model = VisitorAuditLog
+        fields = '__all__'
+
+    def get_security_officer(self, obj):
+        if obj.security_officer:
+            return {"name": obj.security_officer.name, "surname": obj.security_officer.surname}
+        return None
+
+    def get_visitor_record(self, obj):
+        if obj.visitor_record:
+            return {"id": str(obj.visitor_record.id), "visitor_name": obj.visitor_record.visitor_name}
+        return None
+
+    def get_student(self, obj):
+        if obj.student:
+            return {"name": obj.student.name, "surname": obj.student.surname}
+        return None

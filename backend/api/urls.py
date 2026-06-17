@@ -16,6 +16,7 @@ from .views import (
     RoomInspectionViewSet,
     RegisterLandlordView,
     NotificationViewSet,
+    VisitorAuditLogViewSet,
     create_emergency_report,
     login_user,
     ApplyAccommodationView,
@@ -52,14 +53,15 @@ router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'gate-passes', views.GatePassViewSet, basename='gatepass')
 router.register(r'campus-locations', CampusLocationViewSet, basename='campuslocation')
 router.register(r'medical-profiles', StudentMedicalProfileViewSet, basename='medicalprofile')
+# Add to your router section:
+router.register(r'visitor-registers', views.VisitorRegisterViewSet, basename='visitorregister')
+router.register(r'visitor-audit-logs', VisitorAuditLogViewSet, basename='visitorauditlog')
 router.register(r'emergencies', EmergencyReportViewSet, basename='emergency')
 
 router.register(r'medical-responders', MedicalResponderProfileViewSet)
-urlpatterns = [ 
-    # 1. Custom endpoints go FIRST
+urlpatterns = [  
     path('emergencies/create/', create_emergency_report, name='create_emergency'),
-    path('emergencies/unlock-medical-data/', unlock_medical_data, name='unlock_medical_data'),
-    
+    path('emergencies/unlock-medical-data/', unlock_medical_data, name='unlock_medical_data'), 
     path('register-landlord/', RegisterLandlordView.as_view(), name='register_landlord'),
     path('student-self-register/', student_self_register, name='student_self_register'), 
     path('login/', login_user, name='login_user'),
@@ -79,8 +81,7 @@ urlpatterns = [
     path('add-medical-responder/', add_medical_responder, name='add_medical_responder'),
     path('verify-responder-login/', verify_responder_login, name='verify_responder_login'),
     path('request-manual-review/', views.request_manual_review, name='request_manual_review'), 
-    path('serve-decrypted-file/', views.serve_decrypted_file_by_url, name='serve_decrypted_file_by_url'),
-
-    # 2. Generic router goes LAST so it doesn't swallow custom paths
+    path('serve-decrypted-file/', views.serve_decrypted_file_by_url, name='serve_decrypted_file_by_url'), 
+    path('scan-visitor-qr/', views.scan_visitor_qr, name='scan_visitor_qr'),
     path('', include(router.urls)), 
 ]

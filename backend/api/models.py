@@ -422,4 +422,37 @@ class Notification(BaseModel):
 
     def __str__(self):
         return f"{self.title} ({self.target_audience})"
- 
+
+# UPDATE the existing VisitorRegister model to add the signature
+class VisitorRegister(BaseModel):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Arrival'),
+        ('SIGNED_IN', 'Signed In'),
+        ('SIGNED_OUT', 'Signed Out'),
+    ]
+    student = models.ForeignKey(StudentProfile, on_delete=models.CASCADE, related_name='visitors')
+    visitor_name = models.CharField(max_length=255)
+    visitor_contact = encrypt(models.CharField(max_length=20)) 
+    visitor_id_number = encrypt(models.CharField(max_length=50))
+    
+    # NEW: Store signature as a base64 string or URL
+    visitor_signature = models.TextField(blank=True, null=True) 
+    
+    qr_reference = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    time_in = models.DateTimeField(null=True, blank=True)
+    time_out = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+
+    def __str__(self):
+        return f"Visitor: {self.visitor_name} visiting {self.student.student_number}"
+
+# NEW: Audit Log Model
+class VisitorAuditLog(BaseModel):
+    visitor_record = models.ForeignKey(VisitorRegister, on_delete=models.CASCADE, related_name='audit_logs')
+    # The security officer who scanned the QR
+    security_officer = models.ForeignKey('AttendantProfile', on_delete=models.SET_NULL, null=True)
+    student = models.ForeignKey(StudentProfile, on_delete=models.CASCADE)
+    action_taken = models.CharField(max_length=50) # 'SIGNED_IN', 'SIGNED_OUT'
+    
+    def __str__(self):
+        return f"{self.action_taken} by {self.security_officer.name if self.security_officer else 'Unknown'} for {self.visitor_record.visitor_name}"
