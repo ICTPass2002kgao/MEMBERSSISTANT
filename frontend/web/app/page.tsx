@@ -141,10 +141,21 @@ export default function LoginPage() {
                         </div>
                     </form>
 
-                    <div className="mt-8 text-center">
-                        <Link href="/register" className="text-[11px] font-medium text-slate-400 hover:text-white transition-colors">
+                    <div className="mt-8 text-center space-y-4">
+                        <Link href="/register" className="text-[11px] font-medium text-slate-400 hover:text-white transition-colors block">
                             Need a professional account? <span className="text-blue-400 font-bold ml-1 hover:underline underline-offset-4">Register here</span>
                         </Link>
+                        
+                        <div className="text-[10px] text-slate-500">
+                            By logging in, you agree to our{' '}
+                            <Link href="./terms-and-conditons" className="text-slate-400 hover:text-white underline underline-offset-2 transition-colors">
+                                Terms & Conditions
+                            </Link>
+                            {' '}and{' '}
+                            <Link href="./privacy-policy" className="text-slate-400 hover:text-white underline underline-offset-2 transition-colors">
+                                Privacy Policy
+                            </Link>.
+                        </div>
                     </div>
                 </div>
             </div>

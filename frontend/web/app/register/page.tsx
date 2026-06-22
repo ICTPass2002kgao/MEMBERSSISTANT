@@ -15,6 +15,9 @@ export default function RegisterLandlord() {
     const [phone, setPhone] = useState<string>('');
     const [password, setPassword] = useState<string>('');
     
+    // Checkbox state for terms and conditions
+    const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
+    
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [success, setSuccess] = useState<boolean>(false);
@@ -30,6 +33,12 @@ export default function RegisterLandlord() {
     const handleRegister = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
         e.preventDefault();
         setError(null);
+        
+        if (!acceptedTerms) {
+            setError('You must accept the Terms & Conditions and Privacy Policy to register.');
+            return;
+        }
+        
         setLoading(true);
 
         try {
@@ -190,11 +199,30 @@ export default function RegisterLandlord() {
                             />
                         </div>
 
-                        <div className="pt-6">
+                        {/* Terms and Conditions Checkbox */}
+                        <div className="flex items-start gap-3 pt-2">
+                            <div className="flex items-center h-5">
+                                <input
+                                    id="terms"
+                                    type="checkbox"
+                                    checked={acceptedTerms}
+                                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                                    className="w-4 h-4 rounded border-slate-700 bg-slate-900/50 text-blue-600 focus:ring-blue-500/50 focus:ring-offset-slate-900 cursor-pointer"
+                                />
+                            </div>
+                            <label htmlFor="terms" className="text-[11px] text-slate-400 leading-relaxed cursor-pointer">
+                                I have read and agree to the{' '}
+                                <Link href="../terms-and-conditons" className="text-blue-400 hover:underline transition-colors" target="_blank">Terms & Conditions</Link>
+                                {' '}and{' '}
+                                <Link href="../privacy-policy" className="text-blue-400 hover:underline transition-colors" target="_blank">Privacy Policy</Link>.
+                            </label>
+                        </div>
+
+                        <div className="pt-4">
                             <button
                                 type="submit"
-                                disabled={loading}
-                                className="w-full h-14 rounded-xl text-white font-bold tracking-[0.15em] text-xs transition-all disabled:opacity-70 flex items-center justify-center bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/20 active:scale-[0.98]"
+                                disabled={loading || !acceptedTerms}
+                                className="w-full h-14 rounded-xl text-white font-bold tracking-[0.15em] text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/20 active:scale-[0.98]"
                             >
                                 {loading ? (
                                     <div className="flex items-center gap-3">
