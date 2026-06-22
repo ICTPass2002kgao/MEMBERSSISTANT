@@ -383,10 +383,22 @@ class EmergencyReport(BaseModel):
         ('RESPONDING', 'Staff Responding'),
         ('RESOLVED', 'Resolved / Closed')
     ]
-    # The student who pressed the panic button
-    reporting_student = models.ForeignKey('StudentProfile', on_delete=models.CASCADE, related_name='reported_emergencies')
-    
-    # NEW: The student identified by the AI from the photo
+   
+    # Ensure this existing field has null=True, blank=True
+    reporting_student = models.ForeignKey(
+        'StudentProfile', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='student_emergencies'
+    )
+     
+    reporting_attendant = models.ForeignKey(
+        'AttendantProfile', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='attendant_emergencies')
     identified_patient = models.ForeignKey('StudentProfile', on_delete=models.SET_NULL, null=True, blank=True, related_name='medical_emergencies')  
     latitude = models.FloatField()
     longitude = models.FloatField()
