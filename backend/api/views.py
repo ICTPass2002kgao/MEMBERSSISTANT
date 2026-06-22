@@ -1451,6 +1451,7 @@ def send_communication(request):
 
     notifications_to_create = []
     fcm_tokens = []
+    recipient_emails = set()  # Collect unique emails to prevent duplicates
 
     with transaction.atomic():
         if send_mode == 'broadcast':
@@ -1460,6 +1461,8 @@ def send_communication(request):
             if target_audience in ['all', 'students']:
                 for s in students:
                     notifications_to_create.append(Notification(student=s, title=title, message=message, target_audience=target_audience))
+                    if s.email:
+                        recipient_emails.add(s.email)
             
             if target_audience in ['all', 'attendants', 'security', 'room_attendants', 'general_staff']:
                 query = attendants
@@ -1469,6 +1472,8 @@ def send_communication(request):
                 
                 for a in query:
                     notifications_to_create.append(Notification(attendant=a, title=title, message=message, target_audience=target_audience))
+                    if a.email:
+                        recipient_emails.add(a.email)
 
             fcm_payload = messaging.Message(
                 notification=messaging.Notification(title=title, body=message),
@@ -1496,12 +1501,14 @@ def send_communication(request):
             for s in selected_students:
                 notifications_to_create.append(Notification(student=s, title=title, message=message, target_audience=target_audience))
                 if s.fcm_token: fcm_tokens.append(s.fcm_token)
+                if s.email: recipient_emails.add(s.email)
             
             selected_attendants = AttendantProfile.objects.filter(firebase_uid__in=recipient_ids, landlord=landlord)
             for a in selected_attendants:
                 notifications_to_create.append(Notification(attendant=a, title=title, message=message, target_audience=target_audience))
                 if a.fcm_token: fcm_tokens.append(a.fcm_token)
-
+                if a.email: recipient_emails.add(a.email)
+            
             if fcm_tokens:
                 multicast_msg = messaging.MulticastMessage(
                     notification=messaging.Notification(title=title, body=message),
@@ -1524,8 +1531,20 @@ def send_communication(request):
         notifications_to_create.append(Notification(landlord=landlord, title=title, message=message, target_audience=target_audience, is_read=True))
         Notification.objects.bulk_create(notifications_to_create)
 
-    return Response({"message": "Dispatched successfully."}, status=201)
+    # Fire off emails asynchronously to all collected recipients
+    if recipient_emails:
+        email_html_content = f"""
+        <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 20px;">{title}</h2>
+        <p style="color: #475569; font-size: 16px;">You have received a new communication from your property management:</p>
+        <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+            <p style="margin: 0; white-space: pre-wrap; color: #1e293b; font-size: 15px; line-height: 1.6;">{message}</p>
+        </div>
+        <p style="color: #64748b; font-size: 14px; margin-top: 20px;">Please log in to the Dankie application to review your dashboard or take any necessary action.</p>
+        """
+        for email in recipient_emails:
+            send_html_email_async(email, title, email_html_content)
 
+    return Response({"message": "Dispatched successfully."}, status=201)
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
