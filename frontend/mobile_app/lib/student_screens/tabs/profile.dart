@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile_app/components/api_class.dart';
 import 'package:mobile_app/components/face_cache_service.dart';
 import 'package:mobile_app/student_screens/tabs/medical_data.dart';
@@ -128,6 +129,95 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           backgroundColor: Colors.redAccent,
         ),
       );
+    }
+  }
+
+  // Mandatory iOS App Store compliance functionality to process account purges
+  Future<void> _deleteAccountWorkflow() async {
+    final studentId = widget.userData['id']?.toString();
+    if (studentId == null) return;
+
+    bool confirmDelete = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text(
+              "Delete Account",
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent),
+            ),
+            content: const Text(
+              "Are you completely sure you want to permanently purge your account? "
+              "This choice is irreversible and will erase your student profile, securely encrypted biometric records, and legal files from the platform system infrastructure.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("CANCEL", style: TextStyle(color: Colors.grey)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                child: const Text("DELETE PERMANENTLY"),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmDelete) return;
+
+    if (mounted) setState(() => _isLoadingFace = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final token = await user.getIdToken();
+        if (token != null) {
+          final baseUrl = ApiClass().getApiBaseUrl();
+          final url = Uri.parse('$baseUrl/students/$studentId/');
+
+          // Hits your Django destroy method which deletes Firebase user and SQL records atomically
+          final response = await http.delete(
+            url,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          );
+
+          if (response.statusCode == 200 || response.statusCode == 204) {
+            FaceCacheService().clearCache();
+            try {
+              await user.delete();
+            } catch (_) {
+              // Session might already be invalidated by the backend execution loop
+            }
+            widget.onLogout();
+            if (mounted) {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Account successfully deleted."),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          } else {
+            throw Exception('Backend rejection execution error.');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error running account destruction pipeline: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Security protocol error. Re-authenticate or contact system administrators."),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingFace = false);
     }
   }
 
@@ -289,7 +379,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
             const SizedBox(height: 32),
 
-            // NEW: Emergency & Medical Section
+            // Emergency & Medical Section
             _buildSectionHeader("EMERGENCY & MEDICAL", Colors.redAccent),
             _buildInfoCard([
               _buildActionRow(
@@ -332,14 +422,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 "Read our rules & policies",
                 textColor,
                 slateColor,
-                () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (_) =>
-                          const LegalDocumentScreen(isPrivacy: false),
-                    ),
-                  );
+                () async {
+                  final Uri url = Uri.parse("https://mst.mktechcloud.co.za/terms-and-conditions");
+                  if (!await launchUrl(url, mode: LaunchMode.inAppBrowserView)) {
+                    debugPrint("Could not launch Terms & Conditions.");
+                  }
                 },
               ),
               _buildDivider(primaryColor),
@@ -349,15 +436,24 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 "How we handle your data",
                 textColor,
                 slateColor,
-                () {
-                  Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (_) =>
-                          const LegalDocumentScreen(isPrivacy: true),
-                    ),
-                  );
+                () async {
+                  final Uri url = Uri.parse("https://mst.mktechcloud.co.za/privacy-policy");
+                  if (!await launchUrl(url, mode: LaunchMode.inAppBrowserView)) {
+                    debugPrint("Could not launch Privacy Policy.");
+                  }
                 },
+              ),
+              _buildDivider(primaryColor),
+              _buildActionRow(
+                CupertinoIcons.person_crop_circle_badge_xmark,
+                "Delete Account",
+                "Irreversibly wipe your profile data",
+                textColor,
+                slateColor,
+                () {
+                  _deleteAccountWorkflow();
+                },
+                iconColor: Colors.redAccent,
               ),
             ], primaryColor),
 
@@ -536,103 +632,4 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       indent: 56,
     );
   }
-}
-
-// ============================================================================
-// LEGAL DOCUMENT SCREEN (T&C and Privacy Policy)
-// ============================================================================
-class LegalDocumentScreen extends StatelessWidget {
-  final bool isPrivacy;
-
-  const LegalDocumentScreen({super.key, required this.isPrivacy});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final title = isPrivacy ? "PRIVACY POLICY" : "TERMS & CONDITIONS";
-
-    final content = isPrivacy ? _privacyText : _termsText;
-
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: Icon(CupertinoIcons.back, color: theme.colorScheme.onSurface),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: theme.colorScheme.primary,
-            fontSize: 12,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2.0,
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          content,
-          style: TextStyle(
-            color: theme.colorScheme.onSurface.withOpacity(0.8),
-            fontSize: 14,
-            height: 1.6,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-
-  static const String _termsText = """
-Last Updated: March 2026
-
-1. ACCEPTANCE OF TERMS
-By accessing and using this application, you accept and agree to be bound by the terms and provision of this agreement. In addition, when using these particular services, you shall be subject to any posted guidelines or rules applicable to such services.
-
-2. RESIDENCE RULES
-Students are expected to adhere to all physical accommodation rules set forth by their landlord. This application acts as a management layer, and misuse of the application (e.g., generating fraudulent gate passes) may result in immediate eviction.
-
-3. MAINTENANCE REPORTING
-Maintenance requests submitted through this app are queued based on priority. While management attempts to resolve all issues within 48 hours, this timeframe is not legally binding.
-
-4. GATE PASSES & PERMITS
-QR codes generated for gate passes and exit permits are strictly tied to your identity. Attempting to share your QR code with an unregistered individual is considered a severe security breach.
-
-5. PAYMENTS
-Any payments made via Paystack integration for lost keys or damages are final. Refunds must be requested directly from property management.
-
-6. MODIFICATION
-We reserve the right to modify these terms from time to time at our sole discretion. Therefore, you should review these pages periodically.
-""";
-
-  static const String _privacyText = """
-Last Updated: March 2026
-
-1. INFORMATION WE COLLECT
-We collect personal information that you or your landlord provide to us. This includes your name, student number, ID number, email address, phone number, and a photograph of your face for biometric verification.
-
-2. HOW WE USE YOUR INFORMATION
-We use the information we collect or receive to:
-• Facilitate account creation and logon process.
-• Send administrative information to you.
-• Verify your identity at security checkpoints using biometric facial recognition.
-• Manage your residence, including maintenance and gate passes.
-
-3. BIOMETRIC DATA
-Your facial image is stored securely on Google Firebase and referenced by our Django backend solely for the purpose of matching your identity when you attempt to exit the premises. It is never sold to third parties.
-
-4. DATA SECURITY
-We have implemented appropriate technical and organizational security measures designed to protect the security of any personal information we process, including end-to-end encryption of sensitive details like ID numbers.
-
-5. YOUR RIGHTS
-You have the right to request access to the personal data we hold about you, and to ask that your personal data be corrected or updated.
-
-By using this application, you consent to our Privacy Policy.
-""";
 }
