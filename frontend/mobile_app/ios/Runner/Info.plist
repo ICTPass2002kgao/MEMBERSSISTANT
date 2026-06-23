@@ -30,6 +30,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>This app requires access to the camera for live face biometric verification.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Memberssistant needs location access to ensure your safety, allowing security and medical teams to locate you quickly during an active emergency alert.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Memberssistant requires access to your location to accurately dispatch the medical response team directly to your coordinates during an emergency, and to display your position on the campus map.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app requires access to the microphone for liveness capture.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -57,6 +61,11 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>fetch</string>
+	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -76,10 +85,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Memberssistant requires access to your location to accurately dispatch the medical response team directly to your coordinates during an emergency, and to display your position on the campus map.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Memberssistant needs location access to ensure your safety, allowing security and medical teams to locate you quickly during an active emergency alert.</string>
 </dict>
-
 </plist>

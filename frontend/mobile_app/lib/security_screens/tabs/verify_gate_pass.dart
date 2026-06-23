@@ -35,8 +35,10 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
 
     try {
       final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+
+      // Hit the correct Permit Verification Endpoint
       final response = await http.post(
-        Uri.parse('${ApiClass().getApiBaseUrl()}/verify-gate-pass-qr/'),
+        Uri.parse('${ApiClass().getApiBaseUrl()}/verify-permit-qr/'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $idToken',
@@ -50,7 +52,7 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
       } else if (response.statusCode == 404) {
         _showErrorSheet("Invalid or Fake QR Code Detected.");
       } else {
-        _showErrorSheet("Failed to verify gate pass.");
+        _showErrorSheet("Failed to verify permit.");
       }
     } catch (e) {
       _showErrorSheet("Network Error. Please try again.");
@@ -62,15 +64,15 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
   // --- UI CONTROLLERS ---
 
   void _showStagingSheet(Map<String, dynamic> data) {
-    final bool isActive = data['status'] == 'ACTIVE';
+    final bool isApproved = data['status'] == 'APPROVED';
     final theme = Theme.of(context);
 
-    // Split the bundled items for clean display
-    final List<String> assetNames = (data['asset_name'] ?? 'Unknown Asset')
-        .split(' + ');
-    final List<String> assetNums = (data['asset_number'] ?? 'N/A').split(' + ');
-
-    final DateTime expiryDate = DateTime.parse(data['expires_at']).toLocal();
+    // Parse the date if it exists
+    String formattedDate = "N/A";
+    if (data['departure_date'] != null) {
+      final DateTime date = DateTime.parse(data['departure_date']).toLocal();
+      formattedDate = DateFormat('MMM dd, yyyy - HH:mm').format(date);
+    }
 
     showModalBottomSheet(
       context: context,
@@ -78,208 +80,222 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
       backgroundColor: Colors.transparent,
       isDismissible: false,
       builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
+        height:
+            MediaQuery.of(context).size.height *
+            0.9, // Make it tall like the screenshot
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         decoration: BoxDecoration(
-          color: theme.scaffoldBackgroundColor,
+          color: const Color(
+            0xFFF4F6FB,
+          ), // Light bluish-grey background from screenshot
           borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: SafeArea(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Top Drag Handle & Close Button
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    "ASSET PASS VERIFIED",
-                    style: TextStyle(
-                      color: theme.colorScheme.primary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2.0,
+                  IconButton(
+                    icon: const Icon(
+                      CupertinoIcons.back,
+                      color: Color(0xFF1B235A),
                     ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isActive
-                          ? Colors.green.withOpacity(0.1)
-                          : Colors.redAccent.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      isActive ? "ACTIVE" : "EXPIRED",
-                      style: TextStyle(
-                        color: isActive ? Colors.green : Colors.redAccent,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              _buildReadOnlyField(
-                "Student Name",
-                "${data['student_name']} (${data['student_number']})",
-                theme.colorScheme.onSurface,
-              ),
-              const SizedBox(height: 12),
-              _buildReadOnlyField(
-                "Expiry Date",
-                DateFormat('MMM dd, yyyy - HH:mm').format(expiryDate),
-                isActive ? theme.colorScheme.onSurface : Colors.redAccent,
-              ),
-
-              const SizedBox(height: 24),
-              Text(
-                "REGISTERED ASSETS IN THIS BUNDLE",
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onSecondary,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Display the split bundle items
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: theme.colorScheme.onSurface.withOpacity(0.1),
-                  ),
-                ),
-                child: Column(
-                  children: List.generate(assetNames.length, (i) {
-                    final sn = i < assetNums.length ? assetNums[i] : 'N/A';
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            CupertinoIcons.device_laptop,
-                            size: 16,
-                            color: theme.colorScheme.primary,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  assetNames[i],
-                                  style: TextStyle(
-                                    color: theme.colorScheme.onSurface,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                if (sn != 'N/A')
-                                  Text(
-                                    "SN: $sn",
-                                    style: TextStyle(
-                                      color: theme.colorScheme.onSecondary,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              if (isActive)
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton.icon(
                     onPressed: () {
                       Navigator.pop(context);
                       _scannerController.start();
                     },
-                    icon: const Icon(
-                      CupertinoIcons.checkmark_shield_fill,
-                      color: Colors.white,
+                  ),
+                  const Text(
+                    "Permit Details",
+                    style: TextStyle(
+                      color: Color(0xFF1B235A),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
                     ),
-                    label: const Text(
-                      "ALLOW ASSETS THROUGH",
+                  ),
+                  const SizedBox(width: 48), // Balance for centering
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // Avatar
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.blue.withOpacity(0.2),
+                    width: 3,
+                  ),
+                ),
+                child: const Icon(
+                  CupertinoIcons.person_fill,
+                  size: 50,
+                  color: Color(0xFF1B235A),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Name & ID
+              Text(
+                data['student_name'] ?? "Unknown Student",
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1B235A),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                "ID: ${data['student_number'] ?? 'N/A'}",
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                  letterSpacing: 1.0,
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Status Badge
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: isApproved
+                      ? Colors.green.withOpacity(0.15)
+                      : Colors.redAccent.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isApproved
+                        ? Colors.green.withOpacity(0.3)
+                        : Colors.redAccent.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isApproved
+                          ? CupertinoIcons.check_mark_circled_solid
+                          : CupertinoIcons.xmark_circle_fill,
+                      color: isApproved ? Colors.green : Colors.redAccent,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      data['status'] ?? "UNKNOWN",
                       style: TextStyle(
-                        color: Colors.white,
+                        color: isApproved ? Colors.green : Colors.redAccent,
+                        fontSize: 12,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.0,
                       ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Details Card
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        _buildDetailRow(
+                          CupertinoIcons.map_pin_ellipse,
+                          "DESTINATION PROVINCE",
+                          data['destination_province'] ?? 'N/A',
+                        ),
+                        const Divider(height: 24, color: Color(0xFFF0F2F5)),
+
+                        _buildDetailRow(
+                          CupertinoIcons.house_fill,
+                          "FULL ADDRESS",
+                          data['destination_address'] ?? 'N/A',
+                        ),
+                        const Divider(height: 24, color: Color(0xFFF0F2F5)),
+
+                        _buildDetailRow(
+                          CupertinoIcons.calendar,
+                          "DEPARTURE DATE",
+                          formattedDate,
+                        ),
+                        const Divider(height: 24, color: Color(0xFFF0F2F5)),
+
+                        _buildDetailRow(
+                          CupertinoIcons.text_alignleft,
+                          "REASON FOR LEAVE",
+                          data['reason'] ?? 'N/A',
+                        ),
+                        const Divider(height: 24, color: Color(0xFFF0F2F5)),
+
+                        _buildDetailRow(
+                          CupertinoIcons.phone_fill,
+                          "PARENT/GUARDIAN CELL",
+                          data['parent_cell_number'] ?? 'N/A',
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
 
-              if (!isActive)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        CupertinoIcons.exclamationmark_triangle_fill,
-                        color: Colors.redAccent,
-                        size: 24,
-                      ),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          "This gate pass has expired. The student must renew it in their app before leaving with these assets.",
-                          style: TextStyle(
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              const SizedBox(height: 16),
 
-              const SizedBox(height: 12),
-              Center(
-                child: TextButton(
+              // Bottom Button
+              SizedBox(
+                width: double.infinity,
+                height: 60,
+                child: ElevatedButton.icon(
                   onPressed: () {
+                    // TODO: Navigate to Live Face Scanner
                     Navigator.pop(context);
                     _scannerController.start();
                   },
-                  child: Text(
-                    "DISMISS & SCAN ANOTHER",
+                  icon: const Icon(
+                    CupertinoIcons.viewfinder,
+                    color: Colors.white,
+                  ),
+                  label: const Text(
+                    "LAUNCH LIVE FACE SCANNER",
                     style: TextStyle(
-                      color: theme.colorScheme.onSecondary,
-                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.0,
                     ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1B235A),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
                   ),
                 ),
               ),
@@ -290,35 +306,35 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
     );
   }
 
-  Widget _buildReadOnlyField(String label, String value, Color textColor) {
-    return Column(
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.onSecondary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: textColor,
-              fontSize: 13,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        Icon(icon, size: 20, color: const Color(0xFF1B235A).withOpacity(0.5)),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.grey,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1B235A),
+                  fontSize: 14,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -421,7 +437,7 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
                   const Padding(
                     padding: EdgeInsets.all(24.0),
                     child: Text(
-                      "SCAN ASSET PASS QR",
+                      "SCAN PERMIT QR",
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -448,7 +464,7 @@ class _VerifyGatePassTabState extends State<VerifyGatePassTab> {
                   const Padding(
                     padding: EdgeInsets.only(bottom: 120.0),
                     child: Text(
-                      "Align Asset QR Code within the frame",
+                      "Align QR Code within the frame",
                       style: TextStyle(
                         color: Colors.white70,
                         fontWeight: FontWeight.bold,

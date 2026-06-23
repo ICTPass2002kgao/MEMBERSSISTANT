@@ -9,6 +9,8 @@ import 'package:mobile_app/attendant_screens/tabs/home_tab.dart';
 import 'package:mobile_app/attendant_screens/tabs/notifications.dart';
 import 'package:mobile_app/attendant_screens/tabs/verification_tab.dart';
 import 'package:mobile_app/auth/login.dart';
+import 'package:mobile_app/student_screens/tabs/campus_map_tab.dart';
+import 'package:mobile_app/student_screens/tabs/report_emergency.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -109,6 +111,46 @@ class _AttendantDashboardState extends State<AttendantDashboard> {
     return Scaffold(
       backgroundColor: bgColor,
       extendBody: true,
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: FloatingActionButton(
+              heroTag:
+                  "campusMapBtn", // Unique tag required when using multiple FABs
+              backgroundColor: primaryColor,
+              elevation: 6,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CampusMapTab()),
+                );
+              },
+              child: const Icon(CupertinoIcons.map_fill, color: Colors.white),
+            ),
+          ),
+          const SizedBox(height: 16), // Spacing between the buttons
+          FloatingActionButton(
+            heroTag:
+                "emergencyBtn", // Unique tag required when using multiple FABs
+            backgroundColor: Colors.redAccent,
+            elevation: 6,
+            onPressed: () {
+              Navigator.push(
+                context,
+                CupertinoPageRoute(
+                  builder: (context) => const EmergencyReportingScreen(),
+                ),
+              );
+            },
+            child: const Icon(Icons.emergency, color: Colors.white),
+          ),
+        ],
+      ),
+
       body: SafeArea(bottom: false, child: pages[_selectedIndex]),
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.only(left: 24.0, right: 24.0, bottom: 32.0),

@@ -1,4 +1,3 @@
-
 // ============================================================================
 // NEW: MEDICAL DATA ENTRY SCREEN (Interactive & Premium)
 // ============================================================================
@@ -10,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:mobile_app/components/api_class.dart';
 import 'package:http/http.dart' as http;
 
-
 class MedicalDataEntryScreen extends StatefulWidget {
   const MedicalDataEntryScreen({super.key});
 
@@ -19,7 +17,7 @@ class MedicalDataEntryScreen extends StatefulWidget {
 }
 
 class _MedicalDataEntryScreenState extends State<MedicalDataEntryScreen> {
-  bool _isLoading = false;
+  bool _isLoading = true; // Set to true initially to fetch data
 
   String _selectedBloodType = 'Unknown';
   final List<String> _bloodTypes = [
@@ -77,6 +75,12 @@ class _MedicalDataEntryScreenState extends State<MedicalDataEntryScreen> {
   final TextEditingController _contactPhoneController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _fetchMedicalData();
+  }
+
+  @override
   void dispose() {
     _otherAllergyController.dispose();
     _otherConditionController.dispose();
@@ -84,6 +88,98 @@ class _MedicalDataEntryScreenState extends State<MedicalDataEntryScreen> {
     _contactNameController.dispose();
     _contactPhoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchMedicalData() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final token = await user.getIdToken();
+
+      final response = await http.get(
+        Uri.parse('${ApiClass().getApiBaseUrl()}/medical-profiles/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> dataList = jsonDecode(response.body);
+
+        if (dataList.isNotEmpty) {
+          final profile = dataList.first;
+
+          setState(() {
+            // 1. Blood Type
+            final bt = profile['blood_type'] ?? 'Unknown';
+            if (_bloodTypes.contains(bt)) {
+              _selectedBloodType = bt;
+            }
+
+            // 2. Allergies
+            final algString = profile['allergies'] ?? 'None';
+            if (algString != 'None' && algString.isNotEmpty) {
+              final algList = algString
+                  .split(',')
+                  .map((e) => e.trim())
+                  .toList();
+              List<String> otherAlgs = [];
+              for (var alg in algList) {
+                if (_allergyPresets.contains(alg)) {
+                  _selectedAllergies.add(alg);
+                } else {
+                  otherAlgs.add(alg);
+                }
+              }
+              if (otherAlgs.isNotEmpty) {
+                _selectedAllergies.add('Other');
+                _otherAllergyController.text = otherAlgs.join(', ');
+              }
+            }
+
+            // 3. Medical Conditions
+            final condString = profile['medical_conditions'] ?? 'None';
+            if (condString != 'None' && condString.isNotEmpty) {
+              final condList = condString
+                  .split(',')
+                  .map((e) => e.trim())
+                  .toList();
+              List<String> otherConds = [];
+              for (var cond in condList) {
+                if (_conditionPresets.contains(cond)) {
+                  _selectedConditions.add(cond);
+                } else {
+                  otherConds.add(cond);
+                }
+              }
+              if (otherConds.isNotEmpty) {
+                _selectedConditions.add('Other');
+                _otherConditionController.text = otherConds.join(', ');
+              }
+            }
+
+            // 4. Emergency Contact
+            _contactNameController.text =
+                profile['emergency_contact_name'] ?? '';
+            _contactPhoneController.text =
+                profile['emergency_contact_phone'] ?? '';
+
+            final relation = profile['emergency_contact_relation'] ?? 'Parent';
+            if (_relationPresets.contains(relation)) {
+              _selectedRelation = relation;
+            } else {
+              _selectedRelation = 'Other';
+              _otherRelationController.text = relation;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Failed to fetch medical profile: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _saveMedicalData() async {

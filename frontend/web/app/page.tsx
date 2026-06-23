@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useEffect } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from './firebase/config'; // Adjust path if needed
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck, Loader2 } from 'lucide-react';
+import { ShieldCheck, Loader2, Cookie, X } from 'lucide-react';
 import { apiFetch } from './components/api'; // Adjust path if needed
 
 interface LoginResponse {
@@ -15,13 +15,42 @@ interface LoginResponse {
     error?: string;
 }
 
+// Professional-grade cookie helper ensuring Secure and SameSite policies
+const setSecureCookie = (name: string, value: string, days: number = 7) => {
+    const expires = new Date(Date.now() + days * 86400000).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; Secure; SameSite=Strict`;
+};
+
 export default function LoginPage() {
     const [email, setEmail] = useState<string>('');
     const [password, setPassword] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     
+    // Cookie Banner State
+    const [showCookieBanner, setShowCookieBanner] = useState<boolean>(false);
+    
     const router = useRouter();
+
+    // Check if user already answered the cookie banner when the page loads
+    useEffect(() => {
+        const consent = localStorage.getItem('cookie_consent');
+        if (!consent) {
+            setShowCookieBanner(true);
+        }
+    }, []);
+
+    const handleAcceptCookies = () => {
+        localStorage.setItem('cookie_consent', 'accepted');
+        setShowCookieBanner(false);
+        // If you add Google Analytics later, you would initialize it here
+    };
+
+    const handleIgnoreCookies = () => {
+        localStorage.setItem('cookie_consent', 'ignored');
+        setShowCookieBanner(false);
+        // Analytics remain disabled
+    };
 
     const handleLogin = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
         e.preventDefault();
@@ -39,23 +68,20 @@ export default function LoginPage() {
                 body: JSON.stringify({ id_token: idToken }), 
             });
 
-            // --- CRITICAL FIX: Save credentials for the Dashboard to use ---
-            localStorage.setItem('fb_id_token', idToken);
-            if (data.role) localStorage.setItem('user_role', data.role);
-            if (data.user_data) localStorage.setItem('user_data', JSON.stringify(data.user_data));
+            // Authentication cookies are "Strictly Necessary" and are set regardless of banner choice
+            setSecureCookie('fb_id_token', idToken);
+            if (data.role) setSecureCookie('user_role', data.role);
+            if (data.user_data) setSecureCookie('user_data', JSON.stringify(data.user_data));
 
-            // 4. Role-based Routing based on the Professional Profile
             if (data.role === 'admin') {
                 router.push('/admin'); 
             } else if (data.role === 'landlord') {
                 router.push('/landlord/dashboard'); 
             } else {
-                router.push('/dashboard'); // Fallback
+                router.push('/dashboard'); 
             }
             
-
         } catch (err: any) {
-            // Provide a cleaner error message for Firebase auth failures
             if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
                 setError('Invalid professional credentials. Please try again.');
             } else {
@@ -76,10 +102,8 @@ export default function LoginPage() {
             <div className="z-10 w-full max-w-xl">
                 <div className="p-10 sm:p-14 rounded-[32px] bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 shadow-2xl shadow-black/50 flex flex-col items-center relative overflow-hidden">
                     
-                    {/* Subtle Top Border Glow */}
                     <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
 
-                    {/* Professional Security Icon */}
                     <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 mb-8 shadow-lg shadow-black/50">
                         <ShieldCheck className="w-10 h-10 text-blue-500" strokeWidth={1.5} />
                     </div>
@@ -99,7 +123,6 @@ export default function LoginPage() {
                     )}
 
                     <form className="w-full space-y-6" onSubmit={handleLogin}>
-                        {/* Email Input */}
                         <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Professional Email</label>
                             <input
@@ -112,7 +135,6 @@ export default function LoginPage() {
                             />
                         </div>
 
-                        {/* Password Input */}
                         <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Security Credential</label>
                             <input
@@ -148,17 +170,61 @@ export default function LoginPage() {
                         
                         <div className="text-[10px] text-slate-500">
                             By logging in, you agree to our{' '}
-                            <Link href="./terms-and-conditons" className="text-slate-400 hover:text-white underline underline-offset-2 transition-colors">
+                            <Link href="/terms-and-conditions" className="text-slate-400 hover:text-white underline underline-offset-2 transition-colors">
                                 Terms & Conditions
                             </Link>
                             {' '}and{' '}
-                            <Link href="./privacy-policy" className="text-slate-400 hover:text-white underline underline-offset-2 transition-colors">
+                            <Link href="/privacy-policy" className="text-slate-400 hover:text-white underline underline-offset-2 transition-colors">
                                 Privacy Policy
                             </Link>.
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Cookie Consent Banner */}
+            {showCookieBanner && (
+                <div className="fixed bottom-0 left-0 w-full z-50 p-4 sm:p-6 animate-in slide-in-from-bottom-10 duration-500">
+                    <div className="max-w-4xl mx-auto bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl p-6 sm:px-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative overflow-hidden">
+                        
+                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+
+                        <div className="flex items-start gap-4">
+                            <div className="p-3 bg-slate-800/80 rounded-full shrink-0">
+                                <Cookie className="w-6 h-6 text-blue-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-white font-semibold text-sm sm:text-base mb-1">Cookie Preferences</h3>
+                                <p className="text-slate-400 text-xs sm:text-sm leading-relaxed max-w-2xl">
+                                    We use cookies to secure your session and improve platform performance. Strictly necessary authentication cookies are always active. You can choose to accept or ignore non-essential cookies.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 w-full sm:w-auto shrink-0">
+                            <button
+                                onClick={handleIgnoreCookies}
+                                className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-xs font-bold uppercase tracking-wider hover:bg-slate-800 hover:text-white transition-colors"
+                            >
+                                Ignore
+                            </button>
+                            <button
+                                onClick={handleAcceptCookies}
+                                className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold uppercase tracking-wider hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20"
+                            >
+                                Accept All
+                            </button>
+                            <button 
+                                onClick={handleIgnoreCookies}
+                                className="hidden sm:flex p-2 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg transition-colors ml-2"
+                                aria-label="Close"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -1,8 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'package:mobile_app/components/face_cache_service.dart';
 import 'package:mobile_app/student_screens/tabs/profile.dart';
+import 'package:mobile_app/components/api_class.dart';
 
 class Dashboard extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -39,6 +44,79 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   int _selectedTab = 0;
 
+  // Stores the raw decrypted image bytes
+  Uint8List? _decryptedFaceBytes;
+  bool _isLoadingFace = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDecryptedFace();
+  }
+Future<void> _fetchDecryptedFace() async {
+    final String? faceUrl = widget.userData['face_url'];
+    final studentId = widget.userData['id']?.toString(); 
+    
+    if (faceUrl == null || faceUrl.isEmpty || studentId == null) return;
+
+    // 1. CHECK THE CACHE FIRST
+    final cachedFace = FaceCacheService().getFace(studentId);
+    if (cachedFace != null) {
+      if (mounted) {
+        setState(() {
+          _decryptedFaceBytes = cachedFace;
+          _isLoadingFace = false;
+        });
+      }
+      return; // Stop here, no need to hit the backend!
+    }
+
+    // 2. IF NOT CACHED, FETCH FROM BACKEND
+    if (mounted) setState(() => _isLoadingFace = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final token = await user.getIdToken();
+        if (token != null) {
+          final baseUrl = ApiClass().getApiBaseUrl();
+          final url = Uri.parse('$baseUrl/students/$studentId/decrypted-face/');
+
+          final response = await http.get(
+            url,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final String? base64String = data['face_base64'];
+
+            if (base64String != null && base64String.isNotEmpty) {
+              final decodedBytes = base64Decode(base64String);
+              
+              // 3. SAVE TO CACHE FOR NEXT TIME
+              FaceCacheService().saveFace(studentId, decodedBytes);
+
+              if (mounted) {
+                setState(() {
+                  _decryptedFaceBytes = decodedBytes;
+                });
+              }
+            }
+          } else {
+            debugPrint('Failed to decrypt face: ${response.statusCode}');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading decrypted face: $e");
+    } finally {
+      if (mounted) setState(() => _isLoadingFace = false);
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -136,11 +214,9 @@ class _DashboardState extends State<Dashboard> {
     final slateColor = theme.colorScheme.onSecondary;
     final textColor = theme.colorScheme.onSurface;
 
-    final String? faceUrl = widget.userData['face_url'];
     final String? accommodationLogoUrl =
         widget.userData['accommodation_logo_url'];
 
-    // Logic to determine if we should show the Unit block
     final bool hasUnit =
         widget.unitName != "Unassigned Unit" && widget.unitName.isNotEmpty;
 
@@ -203,18 +279,27 @@ class _DashboardState extends State<Dashboard> {
                     child: CircleAvatar(
                       radius: 24,
                       backgroundColor: primaryColor.withOpacity(0.15),
-                      backgroundImage: faceUrl != null && faceUrl.isNotEmpty
-                          ? NetworkImage(faceUrl)
+                      // Use MemoryImage if bytes exist, otherwise null
+                      backgroundImage: _decryptedFaceBytes != null
+                          ? MemoryImage(_decryptedFaceBytes!)
                           : null,
-                      child: faceUrl == null || faceUrl.isEmpty
-                          ? Text(
-                              widget.initials.toUpperCase(),
-                              style: TextStyle(
-                                color: primaryColor,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 18,
-                              ),
-                            )
+                      child: _decryptedFaceBytes == null
+                          ? _isLoadingFace
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Text(
+                                    widget.initials.toUpperCase(),
+                                    style: TextStyle(
+                                      color: primaryColor,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 18,
+                                    ),
+                                  )
                           : null,
                     ),
                   ),
@@ -248,7 +333,7 @@ class _DashboardState extends State<Dashboard> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'Gate Clearance Status',
+                    'The verification happens in monthly basis',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
@@ -262,21 +347,21 @@ class _DashboardState extends State<Dashboard> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: widget.isCleared
+                          color: widget.userData['isVerified'] == true
                               ? Colors.green.withOpacity(0.15)
                               : Colors.red.withOpacity(0.15),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: widget.isCleared
+                            color: widget.userData['isVerified'] == true
                                 ? Colors.green.withOpacity(0.3)
                                 : Colors.red.withOpacity(0.3),
                           ),
                         ),
                         child: Icon(
-                          widget.isCleared
+                          widget.userData['isVerified'] == true
                               ? CupertinoIcons.checkmark_alt
                               : CupertinoIcons.clear,
-                          color: widget.isCleared
+                          color: widget.userData['isVerified'] == true
                               ? Colors.green.shade400
                               : Colors.red.shade400,
                           size: 24,
@@ -284,11 +369,13 @@ class _DashboardState extends State<Dashboard> {
                       ),
                       const SizedBox(width: 16),
                       Text(
-                        widget.isCleared ? 'GRANTED' : 'REVOKED',
+                        widget.userData['isVerified'] == true
+                            ? 'GRANTED'
+                            : 'NOT VERIFIED',
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.w900,
-                          color: widget.isCleared
+                          color: widget.userData['isVerified'] == true
                               ? Colors.green.shade400
                               : Colors.red.shade400,
                         ),
@@ -436,7 +523,6 @@ class _DashboardState extends State<Dashboard> {
   // STUDENT CARD TAB
   // ===========================================================================
   Widget _buildStudentCardView(BuildContext context) {
-    final String? faceUrl = widget.userData['face_url'];
     final String email = "${widget.studentNo}@edu.vut.ac.za";
     final String course = "N DIP: INFORMATION TECHNOLOGY";
 
@@ -580,18 +666,32 @@ class _DashboardState extends State<Dashboard> {
                                     width: 1,
                                   ),
                                 ),
-                                child: faceUrl != null && faceUrl.isNotEmpty
-                                    ? Image.network(
-                                        faceUrl,
+                                child: _decryptedFaceBytes != null
+                                    ? Image.memory(
+                                        _decryptedFaceBytes!,
                                         height: 200,
                                         fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                Container(
+                                                  color: Colors.grey.shade300,
+                                                  child: const Icon(
+                                                    CupertinoIcons.person_fill,
+                                                    color: Colors.grey,
+                                                  ),
+                                                ),
                                       )
                                     : Container(
                                         color: Colors.grey.shade300,
-                                        child: const Icon(
-                                          CupertinoIcons.person_fill,
-                                          color: Colors.grey,
-                                        ),
+                                        child: _isLoadingFace
+                                            ? const Center(
+                                                child:
+                                                    CupertinoActivityIndicator(),
+                                              )
+                                            : const Icon(
+                                                CupertinoIcons.person_fill,
+                                                color: Colors.grey,
+                                              ),
                                       ),
                               ),
                             ],
@@ -688,4 +788,3 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 }
- 

@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile_app/components/api_class.dart';
+import 'email_verification.dart';
 
 // Reuse your exact background widget
 class BubbleBackground extends StatelessWidget {
@@ -108,17 +111,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _surnameController = TextEditingController();
   final TextEditingController _idNumberController = TextEditingController();
-  final TextEditingController _phoneController =
-      TextEditingController(); // Added Phone
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailController =
+      TextEditingController(); // Added Email
   final TextEditingController _passwordController = TextEditingController();
 
-  String _selectedGender = 'MALE'; // Added Gender default
-
+  String _selectedGender = 'MALE';
   bool _isLoading = false;
   bool _obscureText = true;
+  bool _agreedToTerms = false; // Added Terms Agreement state
 
   File? _idDocument;
   File? _proofOfRegistration;
+
+  @override
+  void dispose() {
+    _studentNoController.dispose();
+    _nameController.dispose();
+    _surnameController.dispose();
+    _idNumberController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickDocument(bool isId) async {
     FilePickerResult? result = await FilePicker.pickFiles(
@@ -154,18 +170,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: Colors.redAccent.shade400,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   Future<void> _handleRegister() async {
     final studentNo = _studentNoController.text.trim();
     final name = _nameController.text.trim();
     final surname = _surnameController.text.trim();
     final idNumber = _idNumberController.text.trim();
-    final phone = _phoneController.text.trim(); // Capture Phone
+    final phone = _phoneController.text.trim();
+    final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
     if (studentNo.isEmpty ||
         name.isEmpty ||
         surname.isEmpty ||
         idNumber.isEmpty ||
+        email.isEmpty ||
         password.isEmpty) {
       _showError('Please fill in all required text fields.');
       return;
@@ -176,6 +212,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    if (!_agreedToTerms) {
+      _showError('Please accept the Terms & Conditions and Privacy Policy.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // 1. Generate OTP and send email before submitting data
+    String otp = (Random().nextInt(900000) + 100000).toString();
+
+    ApiClass().sendEmail(
+      email,
+      "Verification Code",
+      "Hello $name $surname,\n\nYour 6-digit verification code is: $otp\n\nThis code expires soon.",
+    );
+
+    setState(() => _isLoading = false);
+
+    // 2. Navigate to OTP verification screen
+    if (!mounted) return;
+    bool? isVerified = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EmailVerificationScreen(
+          email: email,
+          expectedCode: otp,
+          name: name,
+        ),
+      ),
+    );
+
+    // 3. If OTP succeeds, proceed with backend registration
+    if (isVerified == true) {
+      await _submitRegistrationData(
+        studentNo,
+        name,
+        surname,
+        idNumber,
+        phone,
+        email,
+        password,
+      );
+    }
+  }
+
+  Future<void> _submitRegistrationData(
+    String studentNo,
+    String name,
+    String surname,
+    String idNumber,
+    String phone,
+    String email,
+    String password,
+  ) async {
     setState(() => _isLoading = true);
 
     try {
@@ -189,9 +279,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       request.fields['surname'] = surname;
       request.fields['id_number'] = idNumber;
       request.fields['password'] = password;
-      request.fields['gender'] = _selectedGender; // Send Gender
-      request.fields['phone'] = phone; // Send Phone if provided
-  
+      request.fields['gender'] = _selectedGender;
+      request.fields['phone'] = phone;
+      request.fields['email'] = email; // Send email to backend if supported
 
       if (_idDocument != null) {
         request.files.add(
@@ -227,24 +317,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showError(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        backgroundColor: Colors.redAccent.shade400,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
   }
 
   Widget _buildTextField({
@@ -301,7 +373,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // Added Custom Dropdown for Gender
   Widget _buildGenderDropdown() {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
@@ -491,7 +562,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               controller: _idNumberController,
                               hintText: 'ID / Passport Number',
                               icon: Icons.assignment_ind_outlined,
-                              keyboardType: TextInputType.text,
+                              keyboardType: TextInputType.phone,
                             ),
                             _buildTextField(
                               controller: _phoneController,
@@ -499,7 +570,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               icon: Icons.phone_outlined,
                               keyboardType: TextInputType.phone,
                             ),
-                            _buildGenderDropdown(), // Injected Gender Selector
+                            _buildTextField(
+                              controller: _emailController, // Added Email Field
+                              hintText: 'Email Address',
+                              icon: Icons.email_outlined,
+                              keyboardType: TextInputType.emailAddress,
+                            ),
+                            _buildGenderDropdown(),
                             _buildTextField(
                               controller: _passwordController,
                               hintText: 'Password',
@@ -530,6 +607,99 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               'Proof of Registration',
                               _proofOfRegistration,
                               false,
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // Added Checkbox and Links
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: Checkbox(
+                                    value: _agreedToTerms,
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _agreedToTerms = val ?? false;
+                                      });
+                                    },
+                                    activeColor: primaryColor,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: RichText(
+                                    text: TextSpan(
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSecondary,
+                                        fontSize: 13,
+                                        height: 1.4,
+                                      ),
+                                      children: [
+                                        const TextSpan(
+                                          text: "I have read and agree to the ",
+                                        ),
+                                        WidgetSpan(
+                                          child: GestureDetector(
+                                            onTap: () async {
+                                              final Uri url = Uri.parse(
+                                                "https://mst.mktechcloud.co.za/terms-and-conditions",
+                                              );
+                                              if (!await launchUrl(
+                                                url,
+                                                mode:
+                                                    LaunchMode.inAppBrowserView,
+                                              )) {
+                                                debugPrint(
+                                                  "Could not launch T&C url",
+                                                );
+                                              }
+                                            },
+                                            child: Text(
+                                              "Terms and Conditions",
+                                              style: TextStyle(
+                                                color: primaryColor,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const TextSpan(text: " and the "),
+                                        WidgetSpan(
+                                          child: GestureDetector(
+                                            onTap: () async {
+                                              final Uri url = Uri.parse(
+                                                "https://mst.mktechcloud.co.za/privacy-policy",
+                                              );
+                                              if (!await launchUrl(
+                                                url,
+                                                mode:
+                                                    LaunchMode.inAppBrowserView,
+                                              )) {
+                                                debugPrint(
+                                                  "Could not launch Privacy Policy url",
+                                                );
+                                              }
+                                            },
+                                            child: Text(
+                                              "Privacy Policy.",
+                                              style: TextStyle(
+                                                color: primaryColor,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
 
                             const SizedBox(height: 24),

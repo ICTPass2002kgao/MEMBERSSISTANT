@@ -1,12 +1,14 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_app/components/api_class.dart';
-import 'package:mobile_app/student_screens/tabs/medical_data.dart'; // Ensure this points to your API class
+import 'package:mobile_app/components/face_cache_service.dart';
+import 'package:mobile_app/student_screens/tabs/medical_data.dart';
 
-class StudentProfileScreen extends StatelessWidget {
+class StudentProfileScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
   final VoidCallback onLogout;
   final String initials;
@@ -17,6 +19,85 @@ class StudentProfileScreen extends StatelessWidget {
     required this.onLogout,
     required this.initials,
   });
+
+  @override
+  State<StudentProfileScreen> createState() => _StudentProfileScreenState();
+}
+
+class _StudentProfileScreenState extends State<StudentProfileScreen> {
+  Uint8List? _decryptedFaceBytes;
+  bool _isLoadingFace = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDecryptedFace();
+  }
+
+  Future<void> _fetchDecryptedFace() async {
+    final String? faceUrl = widget.userData['face_url']?.toString();
+    final studentId = widget.userData['id']?.toString();
+
+    if (faceUrl == null || faceUrl.trim().isEmpty || studentId == null) return;
+
+    // 1. CHECK THE CACHE FIRST
+    final cachedFace = FaceCacheService().getFace(studentId);
+    if (cachedFace != null) {
+      if (mounted) {
+        setState(() {
+          _decryptedFaceBytes = cachedFace;
+          _isLoadingFace = false;
+        });
+      }
+      return; // Stop here, no need to hit the backend!
+    }
+
+    // 2. IF NOT CACHED, FETCH FROM BACKEND
+    if (mounted) setState(() => _isLoadingFace = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final token = await user.getIdToken();
+        if (token != null) {
+          final baseUrl = ApiClass().getApiBaseUrl();
+          final url = Uri.parse('$baseUrl/students/$studentId/decrypted-face/');
+
+          final response = await http.get(
+            url,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final String? base64String = data['face_base64'];
+
+            if (base64String != null && base64String.isNotEmpty) {
+              final decodedBytes = base64Decode(base64String);
+
+              // 3. SAVE TO CACHE FOR NEXT TIME
+              FaceCacheService().saveFace(studentId, decodedBytes);
+
+              if (mounted) {
+                setState(() {
+                  _decryptedFaceBytes = decodedBytes;
+                });
+              }
+            }
+          } else {
+            debugPrint('Failed to decrypt face: ${response.statusCode}');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading decrypted face: $e");
+    } finally {
+      if (mounted) setState(() => _isLoadingFace = false);
+    }
+  }
 
   Future<void> _resetPassword(BuildContext context, String email) async {
     try {
@@ -57,24 +138,22 @@ class StudentProfileScreen extends StatelessWidget {
     final slateColor = theme.colorScheme.onSecondary;
     final textColor = theme.colorScheme.onSurface;
 
-    // Strict Null Safety and Type Checking
-    final String? faceUrl = userData['face_url']?.toString();
-    final bool hasFace = faceUrl != null && faceUrl.trim().isNotEmpty;
-
     final String nameStr =
-        "${userData['name']?.toString() ?? ''} ${userData['surname']?.toString() ?? ''}"
+        "${widget.userData['name']?.toString() ?? ''} ${widget.userData['surname']?.toString() ?? ''}"
             .trim();
     final String name = nameStr.isNotEmpty ? nameStr : 'Student';
 
-    final String email = userData['email']?.toString() ?? 'No email provided';
+    final String email =
+        widget.userData['email']?.toString() ?? 'No email provided';
     final String studentNo =
-        userData['student_number']?.toString() ?? 'Unknown ID';
-    final String phone = userData['phone']?.toString() ?? 'N/A';
+        widget.userData['student_number']?.toString() ?? 'Unknown ID';
+    final String phone = widget.userData['phone']?.toString() ?? 'N/A';
     final String accName =
-        userData['accommodation_name']?.toString() ?? 'Unassigned';
-    final String blockName = userData['block_name']?.toString() ?? 'Unassigned';
+        widget.userData['accommodation_name']?.toString() ?? 'Unassigned';
+    final String blockName =
+        widget.userData['block_name']?.toString() ?? 'Unassigned';
     final String roomNum =
-        userData['room_number_only']?.toString() ?? 'Unassigned';
+        widget.userData['room_number_only']?.toString() ?? 'Unassigned';
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -118,16 +197,20 @@ class StudentProfileScreen extends StatelessWidget {
                     child: CircleAvatar(
                       radius: 48,
                       backgroundColor: primaryColor.withOpacity(0.15),
-                      backgroundImage: hasFace ? NetworkImage(faceUrl) : null,
-                      child: !hasFace
-                          ? Text(
-                              initials.toUpperCase(),
-                              style: TextStyle(
-                                color: primaryColor,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 36,
-                              ),
-                            )
+                      backgroundImage: _decryptedFaceBytes != null
+                          ? MemoryImage(_decryptedFaceBytes!)
+                          : null,
+                      child: _decryptedFaceBytes == null
+                          ? _isLoadingFace
+                                ? const CircularProgressIndicator()
+                                : Text(
+                                    widget.initials.toUpperCase(),
+                                    style: TextStyle(
+                                      color: primaryColor,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 36,
+                                    ),
+                                  )
                           : null,
                     ),
                   ),
@@ -287,7 +370,8 @@ class StudentProfileScreen extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
-                  onLogout();
+                  FaceCacheService().clearCache();
+                  widget.onLogout();
                 },
                 icon: const Icon(CupertinoIcons.square_arrow_right),
                 label: const Text(

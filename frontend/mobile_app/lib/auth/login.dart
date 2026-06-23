@@ -10,8 +10,9 @@ import 'package:mobile_app/auth/landlord_verify.dart';
 import 'package:mobile_app/auth/register_screen.dart';
 import 'package:mobile_app/security_screens/tabs/dashboard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:mobile_app/student_screens/tabs/components/push_notification_service.dart';
 
-import 'package:mobile_app/student_screens/tabs/main_menu.dart'; 
+import 'package:mobile_app/student_screens/tabs/main_menu.dart';
 import 'forgot_password.dart';
 
 class BubbleBackground extends StatelessWidget {
@@ -116,8 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   bool _obscureText = true;
-
-  Future<void> _handleLogin() async {
+Future<void> _handleLogin() async {
     final identifier = _identifierController.text.trim();
     final password = _passwordController.text.trim();
 
@@ -153,9 +153,16 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('user_data', jsonEncode(data['user_data']));
         await prefs.setString('user_role', data['role']);
 
-        if (!mounted) return;
-
+        // --- NEW ARCHITECTURE: EXTRACT ROLE FIRST ---
         final String baseRole = data['role'];
+
+        // NOW UPDATE FIREBASE WITH THE CORRECT ROLE SUBSCRIPTIONS
+        await PushNotificationService().initialize(userRole: baseRole);
+        
+        // THEN SYNC THE TOKEN TO THE BACKEND
+        await PushNotificationService().syncTokenToBackend();
+
+        if (!mounted) return;
 
         if (baseRole == 'student') {
           Navigator.pushReplacement(
@@ -163,7 +170,6 @@ class _LoginScreenState extends State<LoginScreen> {
             MaterialPageRoute(builder: (_) => const StudentMainMenu()),
           );
         } else if (baseRole == 'responder') {
-          // --- NEW: Intercept Medical Responders for Face Verification ---
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -206,7 +212,6 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
   Future<void> _handleAnonymousLogin() async {
     setState(() => _isLoading = true);
 
