@@ -65,23 +65,28 @@ MAX_UPLOAD_SIZE = 5 * 1024 * 1024
 # ----------------------------------------------------------------------
 # BEAUTIFULLY DESIGNED EMAIL SENDER FUNCTION (ASYNC)
 # ----------------------------------------------------------------------
-def send_html_email_async(to_email, subject, message_content):
+def send_html_email_async(to_email, subject, message_content, logo_url=None):
     if not to_email:
         return
 
+    # Fallback to Memberssistant logo if no specific accommodation/landlord logo is provided
+    default_logo = "https://firebasestorage.googleapis.com/v0/b/membersisstant.firebasestorage.app/o/FCMImages%2Fmemberssistant_icon.png?alt=media&token=01c986f2-5504-497b-bd75-e271edb4abf7"
+    final_logo = logo_url if logo_url else default_logo
+
     def send_task():
         html_body = f"""
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
-            <div style="background-color: #0f172a; padding: 25px; border-radius: 10px 10px 0 0; text-align: center;">
-                <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: 2px;">DANKIE</h1>
-                <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 14px;">Smart Residence Management</p>
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8fafc; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <div style="background-color: #0f172a; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+                <img src="{final_logo}" alt="Logo" style="max-height: 55px; margin-bottom: 8px; border-radius: 4px;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 1px;">Memberssistant</h1>
+                <p style="color: #94a3b8; margin: 2px 0 0 0; font-size: 13px;">Smart Residence Management</p>
             </div>
-            <div style="background-color: #ffffff; padding: 30px; border-radius: 0 0 10px 10px; color: #334155; line-height: 1.6; font-size: 16px; border: 1px solid #e2e8f0; border-top: none;">
+            <div style="background-color: #ffffff; padding: 20px; border-radius: 0 0 10px 10px; color: #334155; line-height: 1.5; font-size: 15px; border: 1px solid #e2e8f0; border-top: none;">
                 {message_content}
             </div>
-            <div style="text-align: center; margin-top: 25px; color: #64748b; font-size: 13px;">
-                <p style="margin: 5px 0;">&copy; {timezone.now().year} MK TECHCLOUD (Pty) Ltd. All rights reserved.</p>
-                <p style="margin: 5px 0;">This is an automated security message. Please do not reply directly to this email.</p>
+            <div style="text-align: center; margin-top: 15px; color: #64748b; font-size: 12px;">
+                <p style="margin: 3px 0;">&copy; {timezone.now().year} MK TECHCLOUD (Pty) Ltd. All rights reserved.</p>
+                <p style="margin: 3px 0;">This is an automated security message. Please do not reply directly to this email.</p>
             </div>
         </div>
         """
@@ -98,7 +103,6 @@ def send_html_email_async(to_email, subject, message_content):
             logger.error(f"Failed to send email to {to_email}: {e}")
 
     threading.Thread(target=send_task).start()
-
 def _extract_blob_path(url):
     if not url:
         return url
@@ -332,7 +336,7 @@ def add_medical_responder(request):
                 # Send Email
                 welcome_msg = f"""
                 <h2 style="color: #0f172a;">Welcome to the Team, {name}!</h2>
-                <p>You have been successfully registered as a Medical Responder on the Dankie Platform.</p>
+                <p>You have been successfully registered as a Medical Responder on the Memberssistant Platform.</p>
                 <div style="background-color: #f1f5f9; padding: 15px; border-radius: 8px; margin: 15px 0;">
                     <p style="margin: 0;"><strong>Email:</strong> {email}</p>
                     <p style="margin: 5px 0 0 0;"><strong>Temporary Password:</strong> {password}</p>
@@ -1539,7 +1543,7 @@ def send_communication(request):
         <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
             <p style="margin: 0; white-space: pre-wrap; color: #1e293b; font-size: 15px; line-height: 1.6;">{message}</p>
         </div>
-        <p style="color: #64748b; font-size: 14px; margin-top: 20px;">Please log in to the Dankie application to review your dashboard or take any necessary action.</p>
+        <p style="color: #64748b; font-size: 14px; margin-top: 20px;">Please log in to the Memberssistant application to review your dashboard or take any necessary action.</p>
         """
         for email in recipient_emails:
             send_html_email_async(email, title, email_html_content)
@@ -1614,7 +1618,7 @@ def create_seller_subaccount(request):
             msg = f"""
             <h2 style="color: #0f172a;">Merchant Account Verified</h2>
             <p>Your Paystack subaccount (<strong>{sub_code}</strong>) has been successfully generated and securely linked to your profile.</p>
-            <p>You are now ready to receive payments from your residents through the Dankie app.</p>
+            <p>You are now ready to receive payments from your residents through the Memberssistant app.</p>
             """
             send_html_email_async(contact_email, "Merchant Account Linked Successfully", msg)
 
@@ -1732,7 +1736,7 @@ def paystack_webhook(request):
                                         </tr>
                                     </table>
                                     <p style="margin-top: 20px;">Reference: <code>{reference}</code></p>
-                                    <p>Thank you for using the Dankie platform.</p>
+                                    <p>Thank you for using the Memberssistant platform.</p>
                                     """
                                     send_html_email_async(issue.student.email, "Payment Successfully Processed", receipt_msg)
 
@@ -1973,10 +1977,10 @@ def student_self_register(request):
                 msg = f"""
                 <h2 style="color: #0f172a;">Registration Successful</h2>
                 <p>Dear {name},</p>
-                <p>Welcome to the Dankie Platform! Your student profile has been successfully created.</p>
+                <p>Welcome to the Memberssistant Platform! Your student profile has been successfully created.</p>
                 <p>Your identity documents and proof of registration have been securely uploaded to our encrypted vault. You may now log in to the app to apply for accommodation and manage your residence profile.</p>
                 """
-                send_html_email_async(email, "Welcome to the Dankie Platform", msg)
+                send_html_email_async(email, "Welcome to the Memberssistant Platform", msg)
 
                 return Response({"message": "Student successfully registered."}, status=201)
                 
@@ -2262,14 +2266,11 @@ class VisitorAuditLogViewSet(BaseSecureViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        
-        # Landlords only see logs for students in their accommodations
+         
         if isinstance(user, LandlordProfile):
             return VisitorAuditLog.objects.filter(student__landlord=user).order_by('-created_at')
-            
-        # Security/Attendants see logs they created
+             
         elif isinstance(user, AttendantProfile):
             return VisitorAuditLog.objects.filter(security_officer=user).order_by('-created_at')
-            
-        # Admins see everything
+             
         return VisitorAuditLog.objects.all().order_by('-created_at')
