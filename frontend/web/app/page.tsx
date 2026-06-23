@@ -167,8 +167,12 @@ export default function LoginPage() {
                         <Link href="/register" className="text-[11px] font-medium text-slate-400 hover:text-white transition-colors block">
                             Need a professional account? <span className="text-blue-400 font-bold ml-1 hover:underline underline-offset-4">Register here</span>
                         </Link>
+
+                        <Link href="/contact-support" className="text-[11px] font-medium text-slate-400 hover:text-white transition-colors block w-full">
+                            Having trouble logging in? <span className="text-blue-400 font-bold ml-1 hover:underline underline-offset-4">Contact Support</span>
+                        </Link>
                         
-                        <div className="text-[10px] text-slate-500">
+                        <div className="text-[10px] text-slate-500 pt-2 border-t border-slate-800/50 w-full">
                             By logging in, you agree to our{' '}
                             <Link href="/terms-and-conditions" className="text-slate-400 hover:text-white underline underline-offset-2 transition-colors">
                                 Terms & Conditions
@@ -184,7 +188,7 @@ export default function LoginPage() {
 
             {/* Cookie Consent Banner */}
             {showCookieBanner && (
-                <div className="fixed bottom-0 left-0 w-full z-50 p-4 sm:p-6 animate-in slide-in-from-bottom-10 duration-500">
+                <div className="fixed bottom-0 left-0 w-full z-40 p-4 sm:p-6 animate-in slide-in-from-bottom-10 duration-500">
                     <div className="max-w-4xl mx-auto bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl p-6 sm:px-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative overflow-hidden">
                         
                         <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
