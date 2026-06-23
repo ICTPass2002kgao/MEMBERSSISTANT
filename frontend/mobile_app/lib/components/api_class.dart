@@ -8,15 +8,15 @@ import 'package:http/http.dart' as http;
 
 class ApiClass {
   String getApiBaseUrl() {
-    if (kIsWeb) {
-      return 'http://127.0.0.1:8000/api'; // Localhost for Web Browser
-    } else if (Platform.isAndroid)
-      return 'http://10.0.2.2:8000/api';
-    else if (Platform.isIOS)
-      // Replace with the 172.20.10.X address you found
-      return 'http://172.20.10.8:8000/api';
-    return 'http://127.0.0.1:8000/api';
-    // return "https://memberssistant.up.railway.app/api";
+    // if (kIsWeb) {
+    //   return 'http://127.0.0.1:8000/api'; // Localhost for Web Browser
+    // } else if (Platform.isAndroid)
+    //   return 'http://10.0.2.2:8000/api';
+    // else if (Platform.isIOS)
+    //   // Replace with the 172.20.10.X address you found
+    //   return 'http://172.20.10.8:8000/api';
+    // return 'http://127.0.0.1:8000/api';
+    return "https://memberssistant.up.railway.app/api";
   }
 
   /// Takes an encrypted Firebase URL and returns a decrypted, ready-to-use URL.
