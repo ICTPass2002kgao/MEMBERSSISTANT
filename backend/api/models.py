@@ -85,11 +85,14 @@ class Accommodation(BaseModel):
     description = models.TextField(blank=True, null=True)
     accommodation_logo_url = models.URLField(blank=True, null=True)
     contact_info = models.CharField(max_length=255, blank=True, null=True)
+    
+    # Paystack Subaccount for this specific property
+    seller_paystack_account = models.CharField(max_length=100, blank=True, null=True)
 
     @property
     def is_authenticated(self): return True
     def __str__(self): return self.name
-
+    
 class Block(BaseModel):
     accommodation = models.ForeignKey(Accommodation, on_delete=models.CASCADE, related_name='blocks')
     name = models.CharField(max_length=100) 

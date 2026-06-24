@@ -911,7 +911,6 @@ class UnitViewSet(BaseSecureViewSet):
         if getattr(self.request, 'user_role', None) == 'landlord':
             queryset = queryset.filter(block__accommodation__landlord=self.request.user)
         return queryset
-
 class AccommodationViewSet(BaseSecureViewSet):
     serializer_class = AccommodationSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser] 
@@ -954,13 +953,50 @@ class AccommodationViewSet(BaseSecureViewSet):
 
     def perform_create(self, serializer):
         landlord = LandlordProfile.objects.filter(firebase_uid=self.request.user.firebase_uid).first()
-        instance = serializer.save(landlord=landlord)
+        
+        # Paystack Subaccount Integration for this specific property
+        business_name = self.request.data.get('business_name')
+        bank_code = self.request.data.get('bank_code')
+        account_number = self.request.data.get('account_number')
+        
+        subaccount_code = None
+        
+        if bank_code and account_number:
+            paystack_payload = {
+                "business_name": business_name or f"{landlord.name} Properties",
+                "settlement_bank": bank_code,
+                "account_number": account_number,
+                "percentage_charge": 9.0, # Your platform fee
+                "primary_contact_email": landlord.email,
+            }
+            headers = {
+                "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}", 
+                "Content-Type": "application/json"
+            }
+            try:
+                paystack_url = getattr(settings, 'PAYSTACK_API_BASE', "https://api.paystack.co") + "/subaccount"
+                paystack_resp = requests.post(paystack_url, json=paystack_payload, headers=headers)
+                paystack_data = paystack_resp.json()
+                
+                if paystack_resp.status_code in [200, 201] and paystack_data.get('status'):
+                    subaccount_code = paystack_data['data']['subaccount_code']
+                else:
+                    raise ValidationError({"error": f"Payment setup failed: {paystack_data.get('message', 'Invalid bank details.')}"})
+            except Exception as e:
+                logger.error(f"Paystack Error during accommodation creation: {e}", exc_info=True)
+                if isinstance(e, ValidationError):
+                    raise e
+                raise ValidationError({"error": "Failed to connect to payment gateway."})
+
+        # Save the Accommodation with its specific subaccount
+        instance = serializer.save(landlord=landlord, seller_paystack_account=subaccount_code)
         self._handle_logo_upload(instance, self.request)
 
     def perform_update(self, serializer):
         instance = serializer.save()
         self._handle_logo_upload(instance, self.request)
-    
+        
+         
 class RoomViewSet(BaseSecureViewSet):
     serializer_class = RoomSerializer
     filter_backends = [DjangoFilterBackend]
@@ -1625,56 +1661,63 @@ def update_fcm_token(request):
             pass
 
     return Response({"message": "Token synced successfully."})
-
-@api_view(['POST']) 
-def create_seller_subaccount(request):
-    uid = request.data.get('firebase_uid')
-    business_name = request.data.get('business_name')
-    bank_code = request.data.get('bank_code')
-    account_number = request.data.get('account_number')
-    contact_email = request.data.get('email')
-
-    if not all([uid, business_name, bank_code, account_number, contact_email]):
-         return Response({'error': 'Missing required fields'}, status=400)
-
-    try: 
-        user = LandlordProfile.objects.get(firebase_uid=uid)
-    except LandlordProfile.DoesNotExist:
-        return Response({'error': "User not found"}, status=404)
- 
-    payload = {
-        "business_name": business_name,
-        "settlement_bank": bank_code,
-        "account_number": account_number,
-        "percentage_charge": 9.0, 
-        "primary_contact_email": contact_email,
-    }
-    
-    headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}", "Content-Type": "application/json"}
-
+@api_view(['POST'])
+@authentication_classes([FirebaseAuthentication])
+@permission_classes([IsAuthenticated])
+def create_payment_link(request):
     try:
-        resp = requests.post(f"{settings.PAYSTACK_API_BASE}/subaccount", json=payload, headers=headers)
-        data = resp.json()
+        student = StudentProfile.objects.get(firebase_uid=request.user.firebase_uid)
+        issue_id = request.data.get('issue_id')
+
+        if not issue_id: return Response({'error': 'Issue ID is required'}, status=400)
+
+        try:
+            # Join the tables up to accommodation so we can grab the specific subaccount code
+            issue = Issue.objects.select_related('room__block__accommodation', 'room__unit__block__accommodation').get(id=issue_id, student=student)
+            charge = Charge.objects.get(issue=issue, is_paid=False)
+        except (Issue.DoesNotExist, Charge.DoesNotExist):
+            return Response({'error': 'Valid pending charge not found.'}, status=404)
+
+        # Trace back to the specific accommodation the student's room belongs to
+        accommodation = None
+        if issue.room:
+            if hasattr(issue.room, 'unit') and issue.room.unit and issue.room.unit.block:
+                accommodation = issue.room.unit.block.accommodation
+            elif issue.room.block:
+                accommodation = issue.room.block.accommodation
+
+        if not accommodation or not accommodation.seller_paystack_account:
+            return Response({'error': 'Payment cannot be processed. Payout account for this specific accommodation is not configured.'}, status=400)
+
+        amount_cents = int(charge.amount * 100)
+        order_ref = f"KEY_{issue.id}_{uuid.uuid4().hex[:8].upper()}"
+
+        body = {
+            "email": student.email,
+            "amount": amount_cents,
+            "currency": "ZAR",
+            "reference": order_ref,
+            "channels": ['card', 'eft', 'mobile_money'],
+            "subaccount": accommodation.seller_paystack_account, # Routes to specific building's bank account
+            "bearer": "subaccount" # Specifies the landlord absorbs the fee
+        }
+
+        headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}", "Content-Type": "application/json"}
+        resp = requests.post("https://api.paystack.co/transaction/initialize", json=body, headers=headers)
         
-        if resp.status_code in [200, 201] and data.get('status') is True:
-            sub_code = data['data']['subaccount_code']
-            user.seller_paystack_account = sub_code 
-            user.save()
+        if resp.status_code != 200: return Response({'error': "Payment gateway initialization failed."}, status=400)
 
-            msg = f"""
-            <h2 style="color: #0f172a;">Merchant Account Verified</h2>
-            <p>Your Paystack subaccount (<strong>{sub_code}</strong>) has been successfully generated and securely linked to your profile.</p>
-            <p>You are now ready to receive payments from your residents through the Memberssistant app.</p>
-            """
-            send_html_email_async(contact_email, "Merchant Account Linked Successfully", msg)
+        data = resp.json()
+        if not data.get('status'): return Response({'error': data.get('message')}, status=400)
 
-            return Response({'success': True, 'subaccount_code': sub_code})
-        else:
-            return Response({'error': data.get('message')}, status=400)
+        return Response({'paymentLink': data['data']['authorization_url'], 'reference': order_ref}, status=200)
+
+    except StudentProfile.DoesNotExist:
+        return Response({'error': 'Student profile not found'}, status=403)
     except Exception as e:
-        logger.error(f"Paystack Subaccount Error: {e}", exc_info=True)
-        return Response({'error': "Failed to communicate with payment gateway."}, status=500)
-
+        logger.error(f"Payment Link Error: {e}", exc_info=True)
+        return Response({'error': "Internal server error during payment initialization."}, status=500)
+    
 
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
