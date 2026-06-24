@@ -163,34 +163,41 @@ def create_emergency_report(request):
             live_image = np.array(pil_image) 
             live_encodings = face_recognition.face_encodings(live_image)
 
-            if live_encodings:
-                live_encoding = live_encodings[0]
-                face_encoding_string = json.dumps(live_encoding.tolist()) 
-                print(f"✅ FACE DETECTED! Live encoding captured.") 
-                
-                best_match_id = None
-                min_distance = 0.55 
-                
-                students = StudentProfile.objects.exclude(face_encoding_json__isnull=True).exclude(face_encoding_json="")
-                
-                for student in students:
-                    try:
-                        db_encoding = np.array(json.loads(student.face_encoding_json))
-                        distance = face_recognition.face_distance([db_encoding], live_encoding)[0]
-                        
-                        if distance < min_distance:
-                            min_distance = distance
-                            best_match_id = student.id
-                    except Exception:
-                        continue
-                
-                if best_match_id:
-                    identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
-            else:
-                print("🚨 AI WARNING: STILL no face detected. The image is either too blurry, too dark, or doesn't contain a face.")
+            # STRICT GATEKEEPER 1: Ensure a human face is present in the image
+            if not live_encodings:
+                if os.path.exists(temp_img): os.remove(temp_img)
+                return Response({"error": "No human face detected. Please capture a clear picture of the patient's face."}, status=400)
+
+            live_encoding = live_encodings[0]
+            face_encoding_string = json.dumps(live_encoding.tolist()) 
+            
+            best_match_id = None
+            min_distance = 0.55 
+            
+            students = StudentProfile.objects.exclude(face_encoding_json__isnull=True).exclude(face_encoding_json="")
+            
+            for student in students:
+                try:
+                    db_encoding = np.array(json.loads(student.face_encoding_json))
+                    distance = face_recognition.face_distance([db_encoding], live_encoding)[0]
+                    
+                    if distance < min_distance:
+                        min_distance = distance
+                        best_match_id = student.id
+                except Exception:
+                    continue
+            
+            # STRICT GATEKEEPER 2: Ensure the detected face is matched to a known student
+            if not best_match_id:
+                if os.path.exists(temp_img): os.remove(temp_img)
+                return Response({"error": "Person is not recognised in the system. Please keep trying or capture a clearer picture."}, status=400)
+
+            identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
                     
         except Exception as e:
+            if os.path.exists(temp_img): os.remove(temp_img)
             logger.error(f"AI Identification Failed: {e}", exc_info=True)
+            return Response({"error": "Facial processing failed. Ensure the image is clear and try again."}, status=400)
 
         cipher_suite = Fernet(settings.FERNET_KEY)
         encrypted_bytes = cipher_suite.encrypt(open(temp_img, 'rb').read())
@@ -202,7 +209,8 @@ def create_emergency_report(request):
         blob.make_public()
         image_url = blob.public_url
 
-        os.remove(temp_img)
+        if os.path.exists(temp_img):
+            os.remove(temp_img)
 
         emergency = EmergencyReport.objects.create(
             reporting_student=reporting_student,
@@ -216,7 +224,7 @@ def create_emergency_report(request):
             face_encoding_json=face_encoding_string 
         )
 
-        patient_name = f"{identified_patient_profile.name} {identified_patient_profile.surname}" if identified_patient_profile else "Unidentified Student"
+        patient_name = f"{identified_patient_profile.name} {identified_patient_profile.surname}"
         
         # Email Landlord of the student
         if identified_patient_profile and identified_patient_profile.landlord and identified_patient_profile.landlord.email:
@@ -2305,10 +2313,6 @@ class VisitorAuditLogViewSet(BaseSecureViewSet):
 
     def get_queryset(self):
         user = self.request.user
-         
-         
-         
-         
          
         if isinstance(user, LandlordProfile):
             return VisitorAuditLog.objects.filter(student__landlord=user).order_by('-created_at')

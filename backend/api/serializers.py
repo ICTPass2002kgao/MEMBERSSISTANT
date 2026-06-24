@@ -186,10 +186,12 @@ class StudentMedicalProfileSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['student']
 # Update inside serializers.py
-class EmergencyReportSerializer(serializers.ModelSerializer):
-    reporter_name = serializers.CharField(source='reporting_student.name', read_only=True)
     
-    # We pull all details from the IDENTIFIED PATIENT, not the reporter
+class EmergencyReportSerializer(serializers.ModelSerializer):
+    reporter_name = serializers.SerializerMethodField()
+    reporter_role = serializers.SerializerMethodField()
+    
+    # We pull all details from the IDENTIFIED PATIENT
     patient_name = serializers.SerializerMethodField()
     patient_room = serializers.SerializerMethodField()
     patient_id = serializers.CharField(source='identified_patient.id', read_only=True)
@@ -197,7 +199,23 @@ class EmergencyReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmergencyReport
         fields = '__all__'
-        read_only_fields = ['reporting_student', 'status', 'resolved_by', 'identified_patient']
+        read_only_fields = ['reporting_student', 'reporting_attendant', 'status', 'resolved_by', 'identified_patient']
+
+    def get_reporter_name(self, obj):
+        # Autonomously checks who the backend linked to the report
+        if obj.reporting_student:
+            return f"{obj.reporting_student.name} {obj.reporting_student.surname}"
+        elif obj.reporting_attendant:
+            return f"{obj.reporting_attendant.name} {obj.reporting_attendant.surname}"
+        return "System / Anonymous"
+
+    def get_reporter_role(self, obj):
+        # Exposes the exact role to the frontend
+        if obj.reporting_student:
+            return "STUDENT"
+        elif obj.reporting_attendant:
+            return obj.reporting_attendant.role # Returns 'SECURITY', 'ATTENDANT', or 'GENERAL'
+        return "SYSTEM"
 
     def get_patient_name(self, obj):
         if obj.identified_patient:
