@@ -24,12 +24,9 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
         maintenance: 0,
         permits: 0,
         applications: 0,
-        notifications: 0  ,
-            activeEmergencies: 0, // NEW BADGE
+        notifications: 0,
     });
     
-    
- 
     useEffect(() => {
         setIsMobileMenuOpen(false);
     }, [pathname]);
@@ -68,13 +65,12 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
 
     const fetchBadgeCounts = async () => {
         try {
-            // Fetch notifications along with other badge data
-            const [issuesData, permitsData, studentsData, notificationsData,emergenciesData] = await Promise.all([
+            // Fetch notifications along with other badge data (Removed /emergencies/ fetch)
+            const [issuesData, permitsData, studentsData, notificationsData] = await Promise.all([
                 apiFetch('/issues/').catch(() => []),
                 apiFetch('/leave-permits/').catch(() => []),
                 apiFetch('/students/').catch(() => []),
-                apiFetch('/notifications/').catch(() => []),
-                apiFetch('/emergencies/').catch(() => [])
+                apiFetch('/notifications/').catch(() => [])
             ]);
 
             const pendingIssues = (issuesData.results || issuesData || [])
@@ -90,16 +86,11 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
             const unreadNotifications = (notificationsData.results || notificationsData || [])
                 .filter((n: any) => n.is_read === false).length;
 
-            const activeAlerts = (emergenciesData.results || emergenciesData || [])
-                .filter((e: any) => e.status === 'PENDING' || e.status === 'RESPONDING').length;
-
             setBadges({
                 maintenance: pendingIssues,
                 permits: pendingPermits,
                 applications: pendingApplications,
-                notifications: unreadNotifications,
-                activeEmergencies: activeAlerts
-            
+                notifications: unreadNotifications
             });
         } catch (e) {
             console.error("Badge fetch failed", e);
@@ -210,7 +201,6 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
                         icon={Activity} 
                         label="Emergency Logs" 
                         href="/landlord/emergency-logs" 
-                        badgeCount={badges.activeEmergencies}
                         isCritical={true}
                     />
                     <SidebarItem 
@@ -229,10 +219,10 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
                         badgeCount={badges.maintenance} 
                     />
                     <SidebarItem 
-    icon={QrCode} 
-    label="Gate Passes" 
-    href="/landlord/gate-passes" 
-/>
+                        icon={QrCode} 
+                        label="Gate Passes" 
+                        href="/landlord/gate-passes" 
+                    />
                     <SidebarItem 
                         icon={ClipboardCheck} 
                         label="Exit Permits" 
@@ -288,7 +278,7 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
                             <Search size={18} />
                         </button>
 
-                        {/* Top Header Notification Bell linking to the new page */}
+                        {/* Top Header Notification Bell */}
                         <Link href="/landlord/notifications" className="relative p-2.5 bg-white border border-blue-100 rounded-xl text-blue-400 hover:text-blue-600 transition-all shadow-sm block">
                             <Bell size={18} />
                             {badges.notifications > 0 && (
