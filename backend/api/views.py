@@ -186,12 +186,9 @@ def create_emergency_report(request):
                         best_match_id = student.id
                 except Exception:
                     continue
-            
-            # STRICT GATEKEEPER 2: Ensure the detected face is matched to a known student
-            if not best_match_id:
-                if os.path.exists(temp_img): os.remove(temp_img)
-                return Response({"error": "Person is not recognised in the system. Please keep trying or capture a clearer picture."}, status=400)
-
+             
+            if best_match_id:
+                identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
             identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
                     
         except Exception as e:
