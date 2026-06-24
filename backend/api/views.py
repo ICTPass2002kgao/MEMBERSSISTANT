@@ -1661,6 +1661,55 @@ def update_fcm_token(request):
             pass
 
     return Response({"message": "Token synced successfully."})
+
+@api_view(['POST']) 
+def create_seller_subaccount(request):
+    uid = request.data.get('firebase_uid')
+    business_name = request.data.get('business_name')
+    bank_code = request.data.get('bank_code')
+    account_number = request.data.get('account_number')
+    contact_email = request.data.get('email')
+
+    if not all([uid, business_name, bank_code, account_number, contact_email]):
+         return Response({'error': 'Missing required fields'}, status=400)
+
+    try: 
+        user = LandlordProfile.objects.get(firebase_uid=uid)
+    except LandlordProfile.DoesNotExist:
+        return Response({'error': "User not found"}, status=404)
+ 
+    payload = {
+        "business_name": business_name,
+        "settlement_bank": bank_code,
+        "account_number": account_number,
+        "percentage_charge": 9.0, 
+        "primary_contact_email": contact_email,
+    }
+    
+    headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}", "Content-Type": "application/json"}
+
+    try:
+        resp = requests.post(f"{settings.PAYSTACK_API_BASE}/subaccount", json=payload, headers=headers)
+        data = resp.json()
+        
+        if resp.status_code in [200, 201] and data.get('status') is True:
+            sub_code = data['data']['subaccount_code']
+            user.seller_paystack_account = sub_code 
+            user.save()
+
+            msg = f"""
+            <h2 style="color: #0f172a;">Merchant Account Verified</h2>
+            <p>Your Paystack subaccount (<strong>{sub_code}</strong>) has been successfully generated and securely linked to your profile.</p>
+            <p>You are now ready to receive payments from your residents through the Memberssistant app.</p>
+            """
+            send_html_email_async(contact_email, "Merchant Account Linked Successfully", msg)
+
+            return Response({'success': True, 'subaccount_code': sub_code})
+        else:
+            return Response({'error': data.get('message')}, status=400)
+    except Exception as e:
+        logger.error(f"Paystack Subaccount Error: {e}", exc_info=True)
+        return Response({'error': "Failed to communicate with payment gateway."}, status=500)
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
@@ -1717,52 +1766,6 @@ def create_payment_link(request):
     except Exception as e:
         logger.error(f"Payment Link Error: {e}", exc_info=True)
         return Response({'error': "Internal server error during payment initialization."}, status=500)
-    
-
-@api_view(['POST'])
-@authentication_classes([FirebaseAuthentication])
-@permission_classes([IsAuthenticated])
-def create_payment_link(request):
-    try:
-        student = StudentProfile.objects.get(firebase_uid=request.user.firebase_uid)
-        issue_id = request.data.get('issue_id')
-
-        if not issue_id: return Response({'error': 'Issue ID is required'}, status=400)
-
-        try:
-            issue = Issue.objects.get(id=issue_id, student=student)
-            charge = Charge.objects.get(issue=issue, is_paid=False)
-        except (Issue.DoesNotExist, Charge.DoesNotExist):
-            return Response({'error': 'Valid pending charge not found.'}, status=404)
-
-        amount_cents = int(charge.amount * 100)
-        order_ref = f"KEY_{issue.id}_{uuid.uuid4().hex[:8].upper()}"
-
-        body = {
-            "email": student.email,
-            "amount": amount_cents,
-            "currency": "ZAR",
-            "reference": order_ref,
-            "channels": ['card', 'eft', 'mobile_money']
-        }
-
-        headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}", "Content-Type": "application/json"}
-        resp = requests.post("https://api.paystack.co/transaction/initialize", json=body, headers=headers)
-        
-        if resp.status_code != 200: return Response({'error': "Payment gateway initialization failed."}, status=400)
-
-        data = resp.json()
-        if not data.get('status'): return Response({'error': data.get('message')}, status=400)
-
-        return Response({'paymentLink': data['data']['authorization_url'], 'reference': order_ref}, status=200)
-
-    except StudentProfile.DoesNotExist:
-        return Response({'error': 'Student profile not found'}, status=403)
-    except Exception as e:
-        logger.error(f"Payment Link Error: {e}", exc_info=True)
-        return Response({'error': "Internal server error during payment initialization."}, status=500)
-
-
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny]) 
