@@ -154,6 +154,7 @@ def create_emergency_report(request):
         identified_patient_profile = None
         face_encoding_string = "" 
         
+        # --- AI Identification Block (Now fails safely without throwing 400) ---
         try:
             pil_image = Image.open(temp_img)
             pil_image = ImageOps.exif_transpose(pil_image) 
@@ -163,41 +164,33 @@ def create_emergency_report(request):
             live_image = np.array(pil_image) 
             live_encodings = face_recognition.face_encodings(live_image)
 
-            # STRICT GATEKEEPER 1: Ensure a human face is present in the image
-            if not live_encodings:
-                if os.path.exists(temp_img): os.remove(temp_img)
-                return Response({"error": "No human face detected. Please capture a clear picture of the patient's face."}, status=400)
-
-            live_encoding = live_encodings[0]
-            face_encoding_string = json.dumps(live_encoding.tolist()) 
-            
-            best_match_id = None
-            min_distance = 0.55 
-            
-            students = StudentProfile.objects.exclude(face_encoding_json__isnull=True).exclude(face_encoding_json="")
-            
-            for student in students:
-                try:
-                    db_encoding = np.array(json.loads(student.face_encoding_json))
-                    distance = face_recognition.face_distance([db_encoding], live_encoding)[0]
-                    
-                    if distance < min_distance:
-                        min_distance = distance
-                        best_match_id = student.id
-                except Exception:
-                    continue
-             
-            if best_match_id:
-                identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
-            else:
-                if os.path.exists(temp_img): os.remove(temp_img)
-                return Response({"error": "Unrecognized patient. Dispatch aborted."}, status=400)
-                    
+            if live_encodings:
+                live_encoding = live_encodings[0]
+                face_encoding_string = json.dumps(live_encoding.tolist()) 
+                
+                best_match_id = None
+                min_distance = 0.60 # Relaxed threshold to account for harsh lighting/shadows
+                
+                students = StudentProfile.objects.exclude(face_encoding_json__isnull=True).exclude(face_encoding_json="")
+                
+                for student in students:
+                    try:
+                        db_encoding = np.array(json.loads(student.face_encoding_json))
+                        distance = face_recognition.face_distance([db_encoding], live_encoding)[0]
+                        
+                        if distance < min_distance:
+                            min_distance = distance
+                            best_match_id = student.id
+                    except Exception:
+                        continue
+                 
+                if best_match_id:
+                    identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
         except Exception as e:
-            if os.path.exists(temp_img): os.remove(temp_img)
-            logger.error(f"AI Identification Failed: {e}", exc_info=True)
-            return Response({"error": "Facial processing failed. Ensure the image is clear and try again."}, status=400)
+            logger.error(f"AI Identification Process Failed: {e}", exc_info=True)
+            # We explicitly do NOT return a 400 here anymore. Let the emergency dispatch proceed.
 
+        # --- Secure Encryption & Upload ---
         cipher_suite = Fernet(settings.FERNET_KEY)
         encrypted_bytes = cipher_suite.encrypt(open(temp_img, 'rb').read())
         filename = f"secure_emergencies/req_{uuid.uuid4().hex}.jpg.enc"
@@ -211,32 +204,50 @@ def create_emergency_report(request):
         if os.path.exists(temp_img):
             os.remove(temp_img)
 
+        # --- Safe Float Conversion for GPS (Prevents DB crashes from string payloads) ---
+        try:
+            lat = float(request.data.get('latitude', 0.0))
+            lng = float(request.data.get('longitude', 0.0))
+        except (ValueError, TypeError):
+            lat = 0.0
+            lng = 0.0
+
         emergency = EmergencyReport.objects.create(
             reporting_student=reporting_student,
             reporting_attendant=reporting_attendant, 
             identified_patient=identified_patient_profile,
-            latitude=request.data.get('latitude', 0.0),
-            longitude=request.data.get('longitude', 0.0),
+            latitude=lat,
+            longitude=lng,
             emergency_type=request.data.get('emergency_type', 'Other'),
             description=request.data.get('description', ''),
             situation_image_url=image_url,
             face_encoding_json=face_encoding_string 
         )
 
-        patient_name = f"{identified_patient_profile.name} {identified_patient_profile.surname}"
+        patient_name = f"{identified_patient_profile.name} {identified_patient_profile.surname}" if identified_patient_profile else "Unidentified Patient"
         
-        # Email Landlord of the student
-        if identified_patient_profile and identified_patient_profile.landlord and identified_patient_profile.landlord.email:
+        # --- Smart Email Routing ---
+        notify_landlord = None
+        if identified_patient_profile and identified_patient_profile.landlord:
+            notify_landlord = identified_patient_profile.landlord
+        elif reporting_student and reporting_student.landlord:
+            notify_landlord = reporting_student.landlord
+        elif reporting_attendant and reporting_attendant.landlord:
+            notify_landlord = reporting_attendant.landlord
+
+        if notify_landlord and notify_landlord.email:
+            reporter_name = reporting_student.name if reporting_student else (reporting_attendant.name if reporting_attendant else "Unknown")
             landlord_email_msg = f"""
             <h2 style="color: #b91c1c; font-weight: bold;">🚨 CRITICAL: {emergency.emergency_type.upper()}</h2>
             <p>An emergency situation has been reported on the premises.</p>
             <p><strong>Patient Identified:</strong> {patient_name}</p>
-            <p><strong>Reported By:</strong> {reporting_student.name if reporting_student else (reporting_attendant.name if reporting_attendant else "Unknown")}</p>
+            <p><strong>Reported By:</strong> {reporter_name}</p>
             <p><strong>Description:</strong> {emergency.description}</p>
             <p>Please log in to your dashboard immediately to view exact GPS coordinates, medical profiles, and secure imagery.</p>
             """
-            send_html_email_async(identified_patient_profile.landlord.email, f"EMERGENCY ALERT: {emergency.emergency_type.upper()}", landlord_email_msg)
+            send_html_email_async(notify_landlord.email, f"EMERGENCY ALERT: {emergency.emergency_type.upper()}", landlord_email_msg)
 
+        # --- Push Notifications to Responders ---
         staff_tokens = MedicalResponderProfile.objects.filter(is_active=True).exclude(fcm_token__isnull=True).values_list('fcm_token', flat=True)
         if staff_tokens:
             msg = messaging.MulticastMessage(
@@ -262,7 +273,6 @@ def create_emergency_report(request):
     except Exception as e:
         logger.error(f"Emergency Creation Error: {e}", exc_info=True)
         return Response({"error": "Failed to dispatch emergency."}, status=500)
-
 class EmergencyAccessLogViewSet(BaseSecureViewSet):
     queryset = EmergencyAccessLog.objects.select_related('student_accessed', 'report').all().order_by('-created_at')
     serializer_class = EmergencyAccessLogSerializer
