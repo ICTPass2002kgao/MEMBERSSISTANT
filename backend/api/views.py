@@ -878,25 +878,42 @@ class LandlordProfileViewSet(BaseSecureViewSet):
             logger.error(f"Landlord Secure Decryption Core Failure: {e}", exc_info=True)
             return Response({'error': 'Decryption pipeline aborted due to an internal execution error.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+# ----------------------------------------------------------------------
+# BACKEND ROLE-BASED FILTERING VIEWS
+# ----------------------------------------------------------------------
+
 class BlockViewSet(BaseSecureViewSet):
-    queryset = Block.objects.all()
     serializer_class = BlockSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['accommodation__id']
 
+    def get_queryset(self):
+        queryset = Block.objects.all()
+        if getattr(self.request, 'user_role', None) == 'landlord':
+            queryset = queryset.filter(accommodation__landlord=self.request.user)
+        return queryset
+
 class UnitViewSet(BaseSecureViewSet):
-    queryset = Unit.objects.all()
     serializer_class = UnitSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['block__id', 'block__accommodation__id']
 
+    def get_queryset(self):
+        queryset = Unit.objects.all()
+        if getattr(self.request, 'user_role', None) == 'landlord':
+            queryset = queryset.filter(block__accommodation__landlord=self.request.user)
+        return queryset
 
 class AccommodationViewSet(BaseSecureViewSet):
     serializer_class = AccommodationSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser] 
 
     def get_queryset(self):
-        return Accommodation.objects.filter(landlord__is_verified=True)
+        queryset = Accommodation.objects.filter(landlord__is_verified=True)
+        if getattr(self.request, 'user_role', None) == 'landlord':
+            queryset = queryset.filter(landlord=self.request.user)
+        return queryset
 
     def get_authenticators(self):
         if self.request and self.request.method == 'GET':
@@ -938,20 +955,33 @@ class AccommodationViewSet(BaseSecureViewSet):
         self._handle_logo_upload(instance, self.request)
     
 class RoomViewSet(BaseSecureViewSet):
-    queryset = Room.objects.all()
     serializer_class = RoomSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['block__accommodation__id', 'room_number', 'block__id', 'unit__id'] 
 
+    def get_queryset(self):
+        queryset = Room.objects.all()
+        if getattr(self.request, 'user_role', None) == 'landlord':
+            queryset = queryset.filter(
+                Q(block__accommodation__landlord=self.request.user) |
+                Q(unit__block__accommodation__landlord=self.request.user)
+            ).distinct()
+        return queryset
+
 class StudentProfileViewSet(BaseSecureViewSet):
-    queryset = StudentProfile.objects.select_related(
-        'room__unit__block__accommodation', 
-        'room__block__accommodation', 
-        'applied_accommodation'
-    ).all()
     serializer_class = StudentProfileSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['firebase_uid', 'student_number', 'is_cleared_for_exit', 'landlord__id']
+
+    def get_queryset(self):
+        queryset = StudentProfile.objects.select_related(
+            'room__unit__block__accommodation', 
+            'room__block__accommodation', 
+            'applied_accommodation'
+        ).all()
+        if getattr(self.request, 'user_role', None) == 'landlord':
+            queryset = queryset.filter(landlord=self.request.user)
+        return queryset
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -1098,16 +1128,20 @@ class StudentProfileViewSet(BaseSecureViewSet):
             logger.error(f"Document Update Error: {e}", exc_info=True)
             return Response({"error": "Document security management failed."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 class AttendantProfileViewSet(BaseSecureViewSet):
     serializer_class = AttendantProfileSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['firebase_uid', 'landlord__id']
 
     def get_queryset(self):
-        return AttendantProfile.objects.annotate(
+        queryset = AttendantProfile.objects.annotate(
             average_rating=Avg('assigned_issues__attendant_rating'),
             resolved_issues_count=Count('assigned_issues', filter=Q(assigned_issues__status='RESOLVED'))
         )
+        if getattr(self.request, 'user_role', None) == 'landlord':
+            queryset = queryset.filter(landlord=self.request.user)
+        return queryset
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -1119,11 +1153,16 @@ class AttendantProfileViewSet(BaseSecureViewSet):
         return Response({"message": "Staff member and Firebase account permanently deleted."}, status=status.HTTP_200_OK)
     
 class IssueViewSet(BaseSecureViewSet):
-    queryset = Issue.objects.select_related('student', 'room__block', 'room__unit', 'assigned_attendant').all()
     serializer_class = IssueSerializer
     filter_backends = [DjangoFilterBackend] 
     filterset_fields = ['status', 'student__firebase_uid', 'assigned_attendant__firebase_uid', 'is_priority']
     
+    def get_queryset(self):
+        queryset = Issue.objects.select_related('student', 'room__block', 'room__unit', 'assigned_attendant').all()
+        if getattr(self.request, 'user_role', None) == 'landlord':
+            queryset = queryset.filter(student__landlord=self.request.user)
+        return queryset
+
     def perform_update(self, serializer):
         instance = serializer.save()
         if instance.status == 'ATTENDING' and not instance.assigned_attendant:
@@ -2266,6 +2305,10 @@ class VisitorAuditLogViewSet(BaseSecureViewSet):
 
     def get_queryset(self):
         user = self.request.user
+         
+         
+         
+         
          
         if isinstance(user, LandlordProfile):
             return VisitorAuditLog.objects.filter(student__landlord=user).order_by('-created_at')

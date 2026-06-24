@@ -38,17 +38,17 @@ from . import views
 router = DefaultRouter() 
 
 router.register(r'emergency-access-logs', EmergencyAccessLogViewSet, basename='emergencyaccesslog')
-router.register(r'landlords', LandlordProfileViewSet)
-router.register(r'blocks', BlockViewSet)
-router.register(r'units', UnitViewSet) 
+router.register(r'landlords', LandlordProfileViewSet ,basename='landlords')
+router.register(r'blocks', BlockViewSet,basename='block')
+router.register(r'units', UnitViewSet,basename='unit') 
 router.register(r'accommodations', AccommodationViewSet,basename='accommodation')
-router.register(r'rooms', RoomViewSet)
-router.register(r'students', StudentProfileViewSet)
+router.register(r'rooms', RoomViewSet,basename='rooms')
+router.register(r'students', StudentProfileViewSet,basename='students')
 router.register(r'attendants', AttendantProfileViewSet,basename='attendant') 
-router.register(r'issues', IssueViewSet)
-router.register(r'charges', ChargeViewSet)
+router.register(r'issues', IssueViewSet,basename='issues')
+router.register(r'charges', ChargeViewSet,basename='charges')
 router.register(r'leave-permits', LeavePermitViewSet, basename='leavepermit')
-router.register(r'room-inspections', RoomInspectionViewSet)
+router.register(r'room-inspections', RoomInspectionViewSet,basename='roominspection')
 router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'gate-passes', views.GatePassViewSet, basename='gatepass')
 router.register(r'campus-locations', CampusLocationViewSet, basename='campuslocation')
@@ -58,7 +58,7 @@ router.register(r'visitor-registers', views.VisitorRegisterViewSet, basename='vi
 router.register(r'visitor-audit-logs', VisitorAuditLogViewSet, basename='visitorauditlog')
 router.register(r'emergencies', EmergencyReportViewSet, basename='emergency')
 
-router.register(r'medical-responders', MedicalResponderProfileViewSet)
+router.register(r'medical-responders', MedicalResponderProfileViewSet,basename='medicalresponders')
 urlpatterns = [  
     path('emergencies/create/', create_emergency_report, name='create_emergency'),
     path('emergencies/unlock-medical-data/', unlock_medical_data, name='unlock_medical_data'), 
