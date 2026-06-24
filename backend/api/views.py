@@ -189,7 +189,9 @@ def create_emergency_report(request):
              
             if best_match_id:
                 identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
-            identified_patient_profile = StudentProfile.objects.get(id=best_match_id)
+            else:
+                if os.path.exists(temp_img): os.remove(temp_img)
+                return Response({"error": "Unrecognized patient. Dispatch aborted."}, status=400)
                     
         except Exception as e:
             if os.path.exists(temp_img): os.remove(temp_img)
