@@ -16,6 +16,7 @@ export default function DashboardOverview() {
         if (!isSilent) setInitialLoading(true);
         
         try {
+            // BACKEND HANDLES SECURITY: We remove all frontend URL building logic.
             const [blocksRes, issuesRes, studentsRes, attendantsRes] = await Promise.all([
                 apiFetch('/blocks/').catch(() => []),
                 apiFetch('/issues/').catch(() => []),
@@ -35,7 +36,7 @@ export default function DashboardOverview() {
             setStats({
                 blocksCount: blocksList.length,
                 issuesCount: issuesList.length,
-                studentsCount: verifiedResidentsList.length, // Uses filtered list
+                studentsCount: verifiedResidentsList.length, 
                 attendantsCount: attendantsList.length
             });
 

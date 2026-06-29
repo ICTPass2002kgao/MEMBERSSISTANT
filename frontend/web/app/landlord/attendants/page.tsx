@@ -23,10 +23,10 @@ export default function AttendantsPage() {
     const fetchAttendantsAndIssues = async () => {
         setLoading(true);
         try {
-            const storedUser = JSON.parse(localStorage.getItem('user_data') || '{}');
-            
+            // BACKEND HANDLES SECURITY: We just ask for the lists. 
+            // Django reads the auth token and filters the data automatically.
             const [attendantsData, issuesData] = await Promise.all([
-                apiFetch(`/attendants/?landlord__id=${storedUser.id}`),
+                apiFetch('/attendants/'),
                 apiFetch('/issues/')
             ]);
             
