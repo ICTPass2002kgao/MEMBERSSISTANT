@@ -1,5 +1,7 @@
 
-export const BASE_URL = 'https://memberssistant.up.railway.app/api'; 
+// export const BASE_URL = 'https://memberssistant.up.railway.app/api'; 
+export const BASE_URL = 'http://127.0.0.1:8000/api'; 
+
 
 // Helper to retrieve and decode a cookie by name
 const getCookie = (name: string): string | null => {

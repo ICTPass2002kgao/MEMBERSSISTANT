@@ -128,7 +128,8 @@ export default function StudentsPage() {
                             className="bg-white border border-blue-100 px-4 py-3 rounded-xl text-[11px] font-bold text-slate-500 outline-none focus:border-blue-400 transition-all min-w-[160px]"
                         >
                             <option value="">All Accommodations</option>
-                            {accommodations.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                            {/* FIX: Appended index to key to ensure uniqueness */}
+                            {accommodations.map((a, index) => <option key={`${a.id}-${index}`} value={a.id}>{a.name}</option>)}
                         </select>
 
                         <select 
@@ -138,8 +139,9 @@ export default function StudentsPage() {
                             className="bg-white border border-blue-100 px-4 py-3 rounded-xl text-[11px] font-bold text-slate-500 outline-none focus:border-blue-400 transition-all min-w-[160px] disabled:opacity-50"
                         >
                             <option value="">All Blocks</option>
-                            {blocks.filter(b => b.accommodation === propertyFilter).map(b => (
-                                <option key={b.id} value={b.id}>{b.name}</option>
+                            {/* FIX: Appended index to key to ensure uniqueness */}
+                            {blocks.filter(b => b.accommodation === propertyFilter).map((b, index) => (
+                                <option key={`${b.id}-${index}`} value={b.id}>{b.name}</option>
                             ))}
                         </select>
 
@@ -397,24 +399,28 @@ function StudentModal({ initialData, students, onClose, onSuccess }: any) {
                     <h4 className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Room Allocation</h4>
                     <Select label="Property" value={selectedAccommodation} onChange={(e:any) => { setSelectedAccommodation(e.target.value); setSelectedBlock(''); setSelectedUnit(''); setFormData({...formData, room_id: ''}); }}>
                         <option value="">-- Choose Property --</option>
-                        {accommodations.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        {/* FIX: Appended index to key to ensure uniqueness */}
+                        {accommodations.map((a, index) => <option key={`acc-${a.id}-${index}`} value={a.id}>{a.name}</option>)}
                     </Select>
                     <Select label="Block" value={selectedBlock} onChange={(e:any) => { setSelectedBlock(e.target.value); setSelectedUnit(''); setFormData({...formData, room_id: ''}); }} disabled={!selectedAccommodation}>
                         <option value="">-- Choose Block --</option>
-                        {blocks.filter(b => b.accommodation === selectedAccommodation).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        {/* FIX: Appended index to key to ensure uniqueness */}
+                        {blocks.filter(b => b.accommodation === selectedAccommodation).map((b, index) => <option key={`blk-${b.id}-${index}`} value={b.id}>{b.name}</option>)}
                     </Select>
                     <Select label="Unit (Optional)" value={selectedUnit} onChange={(e:any) => { setSelectedUnit(e.target.value); setFormData({...formData, room_id: ''}); }} disabled={!selectedBlock}>
                         <option value="">-- Direct Room --</option>
-                        {units.filter(u => u.block === selectedBlock).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        {/* FIX: Appended index to key to ensure uniqueness */}
+                        {units.filter(u => u.block === selectedBlock).map((u, index) => <option key={`unit-${u.id}-${index}`} value={u.id}>{u.name}</option>)}
                     </Select>
                     <Select label="Available Room" value={formData.room_id || formData.room || ''} onChange={(e:any) => setFormData({...formData, room_id: e.target.value})} disabled={!selectedBlock}>
                         <option value="">-- Assign a Room --</option>
+                        {/* FIX: Appended index to key to ensure uniqueness */}
                         {rooms.filter(r => {
                             if (selectedUnit) { if (r.unit !== selectedUnit) return false; } 
                             else { if (r.block !== selectedBlock || r.unit) return false; }
                             const isTaken = students.some((s: any) => s.room === r.id);
                             return !isTaken || (initialData && initialData.room === r.id);
-                        }).map(r => <option key={r.id} value={r.id}>{r.room_number}</option>)}
+                        }).map((r, index) => <option key={`rm-${r.id}-${index}`} value={r.id}>{r.room_number}</option>)}
                     </Select>
                 </div>
                 <SubmitButton loading={loading} text={isEditMode ? (initialData.room ? "Save Changes" : "Complete Onboarding") : "Register Resident"} />
