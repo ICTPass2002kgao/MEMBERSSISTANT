@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    AdminProfileViewSet, # <-- ADDED THIS IMPORT
     LandlordProfileViewSet,
     BlockViewSet,
     MedicalResponderProfileViewSet,
@@ -29,13 +30,18 @@ from .views import (
     verify_landlord_identity_app,
     CampusLocationViewSet,
     StudentMedicalProfileViewSet,
-    EmergencyReportViewSet,EmergencyAccessLogViewSet,
-    unlock_medical_data,MedicalResponderProfileViewSet, add_medical_responder,
+    EmergencyReportViewSet,
+    EmergencyAccessLogViewSet,
+    unlock_medical_data,
+    add_medical_responder,
     verify_responder_login
 )
 from . import views 
 
 router = DefaultRouter() 
+
+# --- NEW ADMIN ROUTE ADDED HERE ---
+router.register(r'admin-profile', AdminProfileViewSet, basename='admin-profile')
 
 router.register(r'emergency-access-logs', EmergencyAccessLogViewSet, basename='emergencyaccesslog')
 router.register(r'landlords', LandlordProfileViewSet ,basename='landlords')
@@ -53,12 +59,11 @@ router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'gate-passes', views.GatePassViewSet, basename='gatepass')
 router.register(r'campus-locations', CampusLocationViewSet, basename='campuslocation')
 router.register(r'medical-profiles', StudentMedicalProfileViewSet, basename='medicalprofile')
-# Add to your router section:
 router.register(r'visitor-registers', views.VisitorRegisterViewSet, basename='visitorregister')
 router.register(r'visitor-audit-logs', VisitorAuditLogViewSet, basename='visitorauditlog')
 router.register(r'emergencies', EmergencyReportViewSet, basename='emergency')
-
 router.register(r'medical-responders', MedicalResponderProfileViewSet,basename='medicalresponders')
+
 urlpatterns = [  
     path('emergencies/create/', create_emergency_report, name='create_emergency'),
     path('emergencies/unlock-medical-data/', unlock_medical_data, name='unlock_medical_data'), 
