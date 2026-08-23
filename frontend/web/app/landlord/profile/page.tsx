@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { User, Phone, Mail, AlertCircle, CheckCircle2, ShieldAlert, Smartphone, ShieldCheck, Download } from 'lucide-react';
-import { apiFetch } from '../../components/api'; // Adjust path based on your structure
+import { User, Phone, Mail, AlertCircle, CheckCircle2, ShieldAlert, Smartphone, ShieldCheck } from 'lucide-react';
+import { apiFetch } from '../../components/api'; 
 import { SectionHeader, Input, SubmitButton } from '../../components/SharedUI';
 
 interface LandlordData {
@@ -25,36 +25,30 @@ export default function LandlordProfilePage() {
     const [message, setMessage] = useState({ type: '', text: '' });
 
     useEffect(() => {
-        // INSTANT AUTO-FILL: Grab what we already know from local storage immediately
+        // 1. Check local storage for instantaneous display
         const storedUserData = localStorage.getItem('user_data');
         if (storedUserData) {
             try {
-                const parsed = JSON.parse(storedUserData);
-                if (parsed && parsed.id) setFormData(parsed);
+                const parsedRaw = JSON.parse(storedUserData);
+                const parsed = parsedRaw.user_data ? parsedRaw.user_data : parsedRaw;
+                if (parsed && (parsed.id || parsed.email)) {
+                    setFormData(parsed);
+                }
             } catch (e) {
                 console.error("Failed to parse local user data.");
             }
         }
 
-        // BACKGROUND FETCH: Silently fetch from DB just to make sure we have the latest
+        // 2. Fetch directly from backend /landlords/me/ using the authenticated Bearer token
         const fetchProfile = async () => {
             try {
-                const parsed = JSON.parse(localStorage.getItem('user_data') || '{}');
-                const uid = parsed.firebase_uid;
-                if (!uid) return;
-
-                const data = await apiFetch(`/landlords/?firebase_uid=${uid}`);
-                const results = data.results ? data.results : data;
-                
-                if (Array.isArray(results) && results.length > 0) {
-                    setFormData(results[0]);
-                    localStorage.setItem('user_data', JSON.stringify(results[0]));
-                } else if (results.id) {
-                    setFormData(results);
-                    localStorage.setItem('user_data', JSON.stringify(results));
+                const data = await apiFetch('/landlords/me/');
+                if (data && (data.id || data.email)) {
+                    setFormData(data);
+                    localStorage.setItem('user_data', JSON.stringify(data));
                 }
             } catch (err) {
-                console.error("Failed to refresh profile data in background.");
+                console.error("Failed to fetch fresh profile data:", err);
             } finally {
                 setLoading(false);
             }
@@ -79,9 +73,9 @@ export default function LandlordProfilePage() {
             });
 
             localStorage.setItem('user_data', JSON.stringify(response));
+            setFormData(response);
             setMessage({ type: 'success', text: 'Profile updated successfully!' });
             
-            // Force a hard reload to update the Layout Administrator name at the top
             setTimeout(() => window.location.reload(), 1500);
             
         } catch (err: any) {
@@ -91,8 +85,12 @@ export default function LandlordProfilePage() {
         }
     };
 
-    if (loading && !formData.id) {
-        return <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-blue-500 w-10 h-10" /></div>;
+    if (loading && !formData.email && !formData.id) {
+        return (
+            <div className="py-20 flex justify-center items-center">
+                <Loader2 className="animate-spin text-blue-500 w-10 h-10" />
+            </div>
+        );
     }
 
     const isBasicInfoComplete = Boolean(formData.name && formData.surname && formData.phone);
@@ -115,11 +113,16 @@ export default function LandlordProfilePage() {
                 )}
 
                 {!isVerified && (
-                    <div className="p-5 bg-rose-50 border border-rose-200 rounded-[24px] flex items-start gap-4 text-rose-700 shadow-sm">
+                    <div className="p-5 bg-rose-50 border border-rose-200 rounded-[24px] flex items-start gap-4 text-rose-700 shadow-sm mb-4">
                         <ShieldAlert size={24} className="shrink-0 mt-0.5" />
                         <div>
                             <p className="font-black text-sm tracking-tight mb-1">Identity Unverified</p>
-                            <p className="text-xs leading-relaxed font-medium">You must complete biometric verification via our mobile app to register properties or admit students.</p>
+                            <p className="text-xs leading-relaxed font-medium mb-2">You must complete biometric verification via our mobile app to register properties or admit students.</p>
+                            <p className="text-[10px] uppercase tracking-wider font-black bg-rose-200/50 inline-block px-2 py-1 rounded">
+                                Please Note: As soon as your verification is successful, your 1-month free trial immediately starts. 
+                            </p>
+                            <br /><p className="text-[10px] uppercase tracking-wider font-stretch-200% text-white bg-green-600 inline-block px-2 py-1 mt-2 rounded ">
+And you can be able to unsubscribe at any time before the trial ends.                            </p>
                         </div>
                     </div>
                 )}
@@ -182,7 +185,6 @@ export default function LandlordProfilePage() {
 
                 {/* Mobile Verification Block */}
                 <div className="bg-slate-900 rounded-[32px] p-8 shadow-xl shadow-slate-900/20 text-white relative overflow-hidden flex flex-col justify-between">
-                    {/* Decorative Background blur */}
                     <div className="absolute top-[-50px] right-[-50px] w-40 h-40 bg-blue-500/20 blur-[50px] rounded-full pointer-events-none"></div>
 
                     <div>
@@ -214,7 +216,6 @@ export default function LandlordProfilePage() {
 
                     {!isVerified && (
                         <div className="mt-8 space-y-3">
-                            {/* App Store (iOS) Button */}
                             <a href="#" className="w-full flex items-center gap-4 bg-white/10 hover:bg-white/20 border border-white/10 p-3 rounded-2xl transition-all group">
                                 <svg className="w-6 h-6 fill-white" viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg">
                                     <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/>
@@ -225,7 +226,6 @@ export default function LandlordProfilePage() {
                                 </div>
                             </a>
 
-                            {/* Google Play Button */}
                             <a href="#" className="w-full flex items-center gap-4 bg-white/10 hover:bg-white/20 border border-white/10 p-3 rounded-2xl transition-all group">
                                 <svg className="w-6 h-6 fill-white" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
                                     <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
@@ -236,7 +236,6 @@ export default function LandlordProfilePage() {
                                 </div>
                             </a>
 
-                            {/* AppGallery Button */}
                             <a href="#" className="w-full flex items-center gap-4 bg-white/10 hover:bg-white/20 border border-white/10 p-3 rounded-2xl transition-all group">
                                 <div className="w-6 h-6 flex items-center justify-center bg-red-600 rounded-md">
                                     <svg className="w-4 h-4 fill-white" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -256,7 +255,11 @@ export default function LandlordProfilePage() {
     );
 }
 
-// Inline fallback for Loader2 since it's not defined in your snippets
 function Loader2({ className }: { className?: string }) {
-    return <svg className={`animate-spin ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>;
+    return (
+        <svg className={`animate-spin ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+    );
 }

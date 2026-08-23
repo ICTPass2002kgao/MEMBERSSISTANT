@@ -1,9 +1,9 @@
 
 export const BASE_URL = 'https://memberssistant.up.railway.app/api'; 
+
 // export const BASE_URL = 'http://127.0.0.1:8000/api'; 
 
-
-// Helper to retrieve and decode a cookie by name
+ 
 const getCookie = (name: string): string | null => {
     if (typeof document === 'undefined') return null;
     const value = `; ${document.cookie}`;
@@ -15,8 +15,7 @@ const getCookie = (name: string): string | null => {
     return null;
 };
 
-export const apiFetch = async (endpoint: string, options: any = {}) => {
-  // Extract token from document.cookie instead of localStorage
+export const apiFetch = async (endpoint: string, options: any = {}) => { 
   const token = getCookie('fb_id_token');
 
   const headers: any = { 
@@ -31,8 +30,7 @@ export const apiFetch = async (endpoint: string, options: any = {}) => {
   const response = await fetch(`${BASE_URL}${endpoint}`, { ...options, headers });
   
   if (response.status === 401 || response.status === 403) {
-      console.error(`Auth/Permission Error on ${endpoint}`);
-      // Ensure this only runs on the client to avoid SSR hydration errors
+      console.error(`Auth/Permission Error on ${endpoint}`); 
       if (typeof window !== 'undefined') {
           window.location.href = '/';
       }
