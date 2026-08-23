@@ -103,6 +103,7 @@ def send_html_email_async(to_email, subject, message_content, logo_url=None):
             logger.error(f"Failed to send email to {to_email}: {e}")
 
     threading.Thread(target=send_task).start()
+
 def _extract_blob_path(url):
     if not url:
         return url
@@ -225,37 +226,36 @@ def create_emergency_report(request):
         )
 
         patient_name = f"{identified_patient_profile.name} {identified_patient_profile.surname}" if identified_patient_profile else "Unidentified Patient"
+        reporter_name = reporting_student.name if reporting_student else (reporting_attendant.name if reporting_attendant else "Unknown")
         
-        # --- Smart Email Routing ---
-        notify_landlord = None
-        if identified_patient_profile and identified_patient_profile.landlord:
-            notify_landlord = identified_patient_profile.landlord
-        elif reporting_student and reporting_student.landlord:
-            notify_landlord = reporting_student.landlord
-        elif reporting_attendant and reporting_attendant.landlord:
-            notify_landlord = reporting_attendant.landlord
+        # --- ROUTE DIRECTLY TO UNIVERSITY CLINIC (Medical Responders) ---
+        clinic_responders = MedicalResponderProfile.objects.filter(is_active=True)
+        clinic_emails = set(r.email for r in clinic_responders if r.email)
+        clinic_tokens = list(set(r.fcm_token for r in clinic_responders if r.fcm_token))
 
-        if notify_landlord and notify_landlord.email:
-            reporter_name = reporting_student.name if reporting_student else (reporting_attendant.name if reporting_attendant else "Unknown")
-            landlord_email_msg = f"""
-            <h2 style="color: #b91c1c; font-weight: bold;">🚨 CRITICAL: {emergency.emergency_type.upper()}</h2>
-            <p>An emergency situation has been reported on the premises.</p>
-            <p><strong>Patient Identified:</strong> {patient_name}</p>
-            <p><strong>Reported By:</strong> {reporter_name}</p>
-            <p><strong>Description:</strong> {emergency.description}</p>
-            <p>Please log in to your dashboard immediately to view exact GPS coordinates, medical profiles, and secure imagery.</p>
-            """
-            send_html_email_async(notify_landlord.email, f"EMERGENCY ALERT: {emergency.emergency_type.upper()}", landlord_email_msg)
+        clinic_email_msg = f"""
+        <h2 style="color: #b91c1c; font-weight: bold;">🚨 UNIVERSITY CLINIC DISPATCH: {emergency.emergency_type.upper()}</h2>
+        <p>A medical emergency has been reported requiring immediate clinic attention.</p>
+        <div style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #b91c1c; margin: 15px 0;">
+            <p style="margin: 0 0 5px 0;"><strong>Patient Identified:</strong> {patient_name}</p>
+            <p style="margin: 0 0 5px 0;"><strong>Reported By:</strong> {reporter_name}</p>
+            <p style="margin: 0;"><strong>Incident Description:</strong> {emergency.description}</p>
+        </div>
+        <p>Please log into the Medical Responder Dashboard immediately to access secure GPS coordinates and unlock the patient's strictly confidential medical history.</p>
+        """
 
-        # --- Push Notifications to Responders ---
-        staff_tokens = MedicalResponderProfile.objects.filter(is_active=True).exclude(fcm_token__isnull=True).values_list('fcm_token', flat=True)
-        if staff_tokens:
+        # Dispatch emails exclusively to the Clinic
+        for c_email in clinic_emails:
+            send_html_email_async(c_email, f"CLINIC ALERT: {emergency.emergency_type.upper()}", clinic_email_msg)
+
+        # Dispatch Push Notifications exclusively to the Clinic
+        if clinic_tokens:
             msg = messaging.MulticastMessage(
                 notification=messaging.Notification(
-                    title=f"CRITICAL: {emergency.emergency_type.upper()}", 
-                    body=f"Patient: {patient_name}. Tap to view location and file."
+                    title=f"CLINIC DISPATCH: {emergency.emergency_type.upper()}", 
+                    body=f"Patient: {patient_name}. Tap to view location and secure medical file."
                 ),
-                tokens=list(staff_tokens),
+                tokens=clinic_tokens,
                 android=messaging.AndroidConfig(
                     priority='high',
                     notification=messaging.AndroidNotification(sound='default')
@@ -267,21 +267,47 @@ def create_emergency_report(request):
                 )
             )
             messaging.send_each_for_multicast(msg)
+ 
+        notify_landlord = None
+        if identified_patient_profile and identified_patient_profile.landlord:
+            notify_landlord = identified_patient_profile.landlord
+        elif reporting_student and reporting_student.landlord:
+            notify_landlord = reporting_student.landlord
+        elif reporting_attendant and reporting_attendant.landlord:
+            notify_landlord = reporting_attendant.landlord
 
-        return Response({"message": "Alert Sent."}, status=201)
+        if notify_landlord and notify_landlord.email:
+            landlord_email_msg = f"""
+            <h2 style="color: #b91c1c; font-weight: bold;">🚨 INCIDENT REPORT: {emergency.emergency_type.upper()}</h2>
+            <p>An emergency incident has been logged at your property.</p>
+            <p><strong>Patient Involved:</strong> {patient_name}</p>
+            <p><strong>Reported By:</strong> {reporter_name}</p>
+            <p><em>Please Note: The University Clinic has been automatically notified and dispatched. Detailed medical records remain strictly confidential and are only accessible by registered clinic personnel.</em></p>
+            """
+            send_html_email_async(notify_landlord.email, f"INCIDENT ALERT: {emergency.emergency_type.upper()}", landlord_email_msg)
+
+        return Response({"message": "Alert Sent Successfully to University Clinic."}, status=201)
 
     except Exception as e:
         logger.error(f"Emergency Creation Error: {e}", exc_info=True)
         return Response({"error": "Failed to dispatch emergency."}, status=500)
+
 class EmergencyAccessLogViewSet(BaseSecureViewSet):
-    queryset = EmergencyAccessLog.objects.select_related('student_accessed', 'report').all().order_by('-created_at')
     serializer_class = EmergencyAccessLogSerializer
     
+    def get_queryset(self):
+        user_role = getattr(self.request, 'user_role', None)
+        # Strict restriction: Only clinic responders or system admins can view medical access audit logs
+        if user_role in ['responder', 'admin']:
+            return EmergencyAccessLog.objects.select_related('student_accessed', 'report').all().order_by('-created_at')
+        return EmergencyAccessLog.objects.none()
+
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [permissions.IsAdminUser()]
         return super().get_permissions()
-
+    
+    
 class MedicalResponderProfileViewSet(viewsets.ModelViewSet):
     queryset = MedicalResponderProfile.objects.all()
     serializer_class = MedicalResponderProfileSerializer
@@ -290,7 +316,10 @@ class MedicalResponderProfileViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['firebase_uid']
 
-    def destroy(self, request, *args, **kwargs):
+    def destroy(self, request, *args, **kwargs): 
+        if getattr(request, 'user_role', None) != 'admin':
+            return Response({'error': 'Unauthorized. Only System Administrators can delete Medical Responders.'}, status=status.HTTP_403_FORBIDDEN)
+            
         instance = self.get_object()
         try:
             auth.delete_user(instance.firebase_uid)
@@ -298,12 +327,17 @@ class MedicalResponderProfileViewSet(viewsets.ModelViewSet):
             logger.warning(f"Firebase warning during responder deletion: {str(e)}")
         self.perform_destroy(instance)
         return Response({"message": "Responder and Firebase account permanently deleted."}, status=status.HTTP_200_OK)
-    
+
+
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def add_medical_responder(request):
+    # STRICT ENFORCEMENT: Only Admins can add Medical Responders
+    if getattr(request, 'user_role', None) != 'admin':
+        return Response({'error': 'Unauthorized. Only System Administrators can register Medical Responders.'}, status=status.HTTP_403_FORBIDDEN)
+
     id_number = request.data.get('id_number')
     name = request.data.get('name')
     email = request.data.get('email')
@@ -312,10 +346,10 @@ def add_medical_responder(request):
     face_image = request.FILES.get('face_image')  
 
     if not all([id_number, name, email, surname]):
-        return Response({"error": "Missing required fields."}, status=400)
+        return Response({"error": "Missing required fields."}, status=status.HTTP_400_BAD_REQUEST)
 
     if face_image and face_image.size > MAX_UPLOAD_SIZE:
-        return Response({"error": "Face image exceeds the 5MB size limit."}, status=400)
+        return Response({"error": "Face image exceeds the 5MB size limit."}, status=status.HTTP_400_BAD_REQUEST)
 
     password = id_number[:6]
     
@@ -362,19 +396,18 @@ def add_medical_responder(request):
                 """
                 send_html_email_async(email, "Welcome to the Medical Responder Team", welcome_msg)
 
-            return Response({"message": "Medical Responder successfully registered.", "responder_id": responder.id}, status=201)
+            return Response({"message": "Medical Responder successfully registered.", "responder_id": responder.id}, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             auth.delete_user(firebase_user.uid)
             logger.error(f"Responder DB/Storage Error: {e}", exc_info=True)
-            return Response({"error": "Failed to encrypt biometrics or complete registration."}, status=500)
+            return Response({"error": "Failed to encrypt biometrics or complete registration."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     except auth.EmailAlreadyExistsError:
-        return Response({"error": "An account with this email already exists."}, status=400)
+        return Response({"error": "An account with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Firebase Creation Error: {e}", exc_info=True)
-        return Response({"error": "Authentication provider error."}, status=500)
-
+        return Response({"error": "Authentication provider error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
@@ -424,10 +457,15 @@ def verify_responder_login(request):
         logger.error(f"Responder Login Verification Error: {e}", exc_info=True)
         return Response({'error': 'An internal server error occurred during biometric verification.'}, status=500)
 
+
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
 def unlock_medical_data(request):
+    # STRICT ENFORCEMENT: Only University Clinic personnel can unlock medical records
+    if getattr(request, 'user_role', None) != 'responder':
+        return Response({'error': 'STRICT CONFIDENTIALITY: Only authorized University Clinic personnel (Medical Responders) can access medical records.'}, status=403)
+
     report_id = request.data.get('report_id')
     patient_id = request.data.get('patient_id') 
 
@@ -514,12 +552,18 @@ class CampusLocationViewSet(BaseSecureViewSet):
             return [IsAuthenticated(), IsLandlord()] 
         return [IsAuthenticated()]
 
+
 class StudentMedicalProfileViewSet(BaseSecureViewSet):
     serializer_class = StudentMedicalProfileSerializer
 
     def get_queryset(self):
-        if hasattr(self.request.user, 'firebase_uid') and getattr(self.request.user, 'role', 'student') == 'student':
+        user_role = getattr(self.request, 'user_role', None)
+        # STRICT ENFORCEMENT: Only the student themselves or the University Clinic can read this data
+        if user_role == 'student':
             return StudentMedicalProfile.objects.filter(student=self.request.user)
+        elif user_role == 'responder':
+            return StudentMedicalProfile.objects.all()
+            
         return StudentMedicalProfile.objects.none()
 
     def perform_create(self, serializer):
@@ -530,18 +574,45 @@ class StudentMedicalProfileViewSet(BaseSecureViewSet):
             raise ValidationError({"error": "Only student profiles can update medical data."})
         
 class EmergencyReportViewSet(BaseSecureViewSet):
-    queryset = EmergencyReport.objects.select_related('reporting_student', 'resolved_by').all().order_by('-created_at')
     serializer_class = EmergencyReportSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status']
-    
     parser_classes = [MultiPartParser, FormParser, JSONParser] 
-      
+
+    def get_queryset(self):
+        user_role = getattr(self.request, 'user_role', None)
+        
+        # Clinic gets full unrestricted access to all emergencies
+        if user_role == 'responder':
+            return EmergencyReport.objects.all().order_by('-created_at')
+            
+        # Students only see emergencies they reported
+        elif user_role == 'student':
+            return EmergencyReport.objects.filter(reporting_student=self.request.user).order_by('-created_at')
+            
+        # Security/Attendants only see emergencies they reported
+        elif user_role == 'attendant':
+            return EmergencyReport.objects.filter(reporting_attendant=self.request.user).order_by('-created_at')
+            
+        # Landlords can only see the metadata of emergencies in their buildings, 
+        # protecting patient medical files strictly for the clinic
+        elif user_role == 'landlord':
+            return EmergencyReport.objects.filter(
+                Q(reporting_student__landlord=self.request.user) |
+                Q(reporting_attendant__landlord=self.request.user)
+            ).order_by('-created_at')
+            
+        return EmergencyReport.objects.none()
+
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def unlock_medical_data_dual(request):
+    # STRICT ENFORCEMENT: Only University Clinic personnel can unlock medical records
+    if getattr(request, 'user_role', None) != 'responder':
+        return Response({'error': 'STRICT CONFIDENTIALITY: Only authorized University Clinic personnel (Medical Responders) can access medical records.'}, status=403)
+
     report_id = request.data.get('report_id')
     staff_face = request.FILES.get('staff_face')
     student_face = request.FILES.get('student_face')
@@ -843,6 +914,19 @@ class LandlordProfileViewSet(BaseSecureViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['firebase_uid']
 
+    @action(detail=False, methods=['get'], url_path='me')
+    def get_current_profile(self, request):
+        uid = getattr(request.user, 'firebase_uid', None) or getattr(request.user, 'username', None)
+        try:
+            landlord = LandlordProfile.objects.get(firebase_uid=uid)
+            serializer = self.get_serializer(landlord)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except LandlordProfile.DoesNotExist:
+            if isinstance(request.user, LandlordProfile):
+                serializer = self.get_serializer(request.user)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response({"error": "Landlord profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
     @action(detail=True, methods=['get'], url_path='decrypted-document')
     def get_decrypted_document(self, request, pk=None):
         import requests
@@ -921,6 +1005,7 @@ class UnitViewSet(BaseSecureViewSet):
         if getattr(self.request, 'user_role', None) == 'landlord':
             queryset = queryset.filter(block__accommodation__landlord=self.request.user)
         return queryset
+
 class AccommodationViewSet(BaseSecureViewSet):
     serializer_class = AccommodationSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser] 
@@ -976,7 +1061,7 @@ class AccommodationViewSet(BaseSecureViewSet):
                 "business_name": business_name or f"{landlord.name} Properties",
                 "settlement_bank": bank_code,
                 "account_number": account_number,
-                "percentage_charge": 9.0, # Your platform fee
+                "percentage_charge": 0.0, # FIXED: Platform takes 0% as requested
                 "primary_contact_email": landlord.email,
             }
             headers = {
@@ -1387,34 +1472,81 @@ class GlobalSearchView(APIView):
 
         return Response({"results": results})
 
+
 class RegisterLandlordView(APIView):
+    # Notice: we permit Any to access the view BUT strictly verify the Firebase Token inside to identify the real user and prevent spoofing.
     permission_classes = [permissions.AllowAny]
+    
     def post(self, request):
-        firebase_uid = request.data.get('firebase_uid')
-        email = request.data.get('email')
+        # 1. SECURE IDENTIFICATION: Prevents Hackers from bypassing authentication by providing fake UIDs
+        auth_header = request.META.get('HTTP_AUTHORIZATION')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response({"error": "Missing or invalid authorization header. Identity cannot be verified."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        id_token = auth_header.split(' ').pop()
+        try:
+            decoded_token = auth.verify_id_token(id_token)
+            firebase_uid = decoded_token.get('uid')
+            email = decoded_token.get('email') or request.data.get('email')
+        except Exception as e:
+            return Response({"error": "Invalid or expired Firebase token."}, status=status.HTTP_401_UNAUTHORIZED)
         
         name = request.data.get('name')
         surname = request.data.get('surname')
         phone = request.data.get('phone')
+        
+        # Paystack specific bank requirements for creating subaccount directly during signup
+        bank_code = request.data.get('bank_code')
+        account_number = request.data.get('account_number')
+        business_name = request.data.get('business_name')
 
-        if not firebase_uid or not email:
-            return Response({"error": "firebase_uid and email are strictly required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([firebase_uid, email, name, surname, bank_code, account_number, business_name]):
+            # GHOST USER PREVENTION: Ensure no incomplete records exist in Firebase if registration gets interrupted.
+            try:
+                auth.delete_user(firebase_uid)
+            except Exception:
+                pass
+            return Response({"error": "Missing required profile or banking details. Firebase account purged to prevent a ghost user."}, status=status.HTTP_400_BAD_REQUEST)
 
         if LandlordProfile.objects.filter(firebase_uid=firebase_uid).exists():
-            return Response({"error": "A landlord with this Firebase UID already exists."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "A landlord with this account already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            with transaction.atomic():
+            with transaction.atomic(): # Atomic block guarantees the database rolls back if paystack fails.
+                # We gracefully get or create the Django User to handle registration retries cleanly 
                 user, created = User.objects.get_or_create(username=firebase_uid, defaults={'email': email})
-                if not created:
-                    return Response({"error": "User already exists in auth system."}, status=400)
                 
+                # 2. PAYSTACK SUBACCOUNT GENERATION
+                paystack_payload = {
+                    "business_name": business_name,
+                    "settlement_bank": bank_code,
+                    "account_number": account_number,
+                    "percentage_charge": 0.0, # FIXED: Platform takes 0%, money is sent directly to landlord minus Paystack gateway fee.
+                    "primary_contact_email": email,
+                }
+                headers = {
+                    "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}", 
+                    "Content-Type": "application/json"
+                }
+                
+                paystack_url = getattr(settings, 'PAYSTACK_API_BASE', "https://api.paystack.co") + "/subaccount"
+                paystack_resp = requests.post(paystack_url, json=paystack_payload, headers=headers)
+                paystack_data = paystack_resp.json()
+                
+                if paystack_resp.status_code not in [200, 201] or not paystack_data.get('status'):
+                    raise ValueError(f"Paystack account creation failed: {paystack_data.get('message', 'Invalid bank details.')}")
+                    
+                subaccount_code = paystack_data['data']['subaccount_code']
+
+                # 3. PROFILE CREATION
                 landlord = LandlordProfile.objects.create(
                     firebase_uid=firebase_uid, 
                     email=email,
                     name=name,
                     surname=surname,
                     phone=phone,
+                    paystack_merchant_code=subaccount_code,
+                    seller_paystack_account=subaccount_code,
                     is_verified=False,
                     digital_verification_status=False,
                     manual_verification_status=False
@@ -1423,18 +1555,27 @@ class RegisterLandlordView(APIView):
                 msg = f"""
                 <h2 style="color: #0f172a;">Landlord Account Created</h2>
                 <p>Dear {name},</p>
-                <p>Welcome to the platform! Your landlord account has been successfully created.</p>
-                <p>To complete your registration and activate your account, please log into the mobile app and complete your biometric and identity verification process.</p>
+                <p>Welcome to the platform! Your landlord account and Merchant payout account (<strong>{subaccount_code}</strong>) have been successfully generated.</p>
+                <p>To complete your registration and activate your dashboard, please log into the mobile app and complete your biometric verification process.</p>
                 """
-                send_html_email_async(email, "Welcome! Account Registration Successful", msg)
+                send_html_email_async(email, "Welcome! Registration & Payout Account Successful", msg)
 
                 return Response({
-                    "message": "Landlord account created successfully. Please log into the mobile app to complete your biometric verification.", 
-                    "firebase_uid": landlord.firebase_uid
+                    "message": "Landlord account created successfully.", 
+                    "firebase_uid": landlord.firebase_uid,
+                    "subaccount_code": subaccount_code
                 }, status=status.HTTP_201_CREATED)
+                
         except Exception as e:
+            # GHOST USER PREVENTION EXECUTION: Safely destroy the Firebase identity if internal server transaction failed
+            try:
+                auth.delete_user(firebase_uid)
+            except Exception as fb_err:
+                logger.error(f"Failed to cleanly delete ghost Firebase user {firebase_uid}: {fb_err}")
+            
             logger.error(f"Landlord Registration Error: {e}", exc_info=True)
-            return Response({"error": "Database error occurred during registration."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            error_message = str(e) if isinstance(e, ValueError) else "Database or Payment gateway error occurred during registration."
+            return Response({"error": error_message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
 @permission_classes([AllowAny]) 
@@ -1641,6 +1782,7 @@ def send_communication(request):
             send_html_email_async(email, title, email_html_content)
 
     return Response({"message": "Dispatched successfully."}, status=201)
+
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
@@ -1673,14 +1815,17 @@ def update_fcm_token(request):
     return Response({"message": "Token synced successfully."})
 
 @api_view(['POST']) 
+@authentication_classes([FirebaseAuthentication])
+@permission_classes([IsAuthenticated, IsLandlord])
 def create_seller_subaccount(request):
-    uid = request.data.get('firebase_uid')
+    # SECURITY: Using backend verified identity instead of insecure frontend body parameters
+    uid = request.user.firebase_uid 
     business_name = request.data.get('business_name')
     bank_code = request.data.get('bank_code')
     account_number = request.data.get('account_number')
     contact_email = request.data.get('email')
 
-    if not all([uid, business_name, bank_code, account_number, contact_email]):
+    if not all([business_name, bank_code, account_number, contact_email]):
          return Response({'error': 'Missing required fields'}, status=400)
 
     try: 
@@ -1692,7 +1837,7 @@ def create_seller_subaccount(request):
         "business_name": business_name,
         "settlement_bank": bank_code,
         "account_number": account_number,
-        "percentage_charge": 9.0, 
+        "percentage_charge": 0.0,  # FIXED: Platform fee 0%, all proceeds route direct to Landlord Subaccount
         "primary_contact_email": contact_email,
     }
     
@@ -1720,6 +1865,7 @@ def create_seller_subaccount(request):
     except Exception as e:
         logger.error(f"Paystack Subaccount Error: {e}", exc_info=True)
         return Response({'error': "Failed to communicate with payment gateway."}, status=500)
+
 @api_view(['POST'])
 @authentication_classes([FirebaseAuthentication])
 @permission_classes([IsAuthenticated])
@@ -1776,6 +1922,7 @@ def create_payment_link(request):
     except Exception as e:
         logger.error(f"Payment Link Error: {e}", exc_info=True)
         return Response({'error': "Internal server error during payment initialization."}, status=500)
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny]) 

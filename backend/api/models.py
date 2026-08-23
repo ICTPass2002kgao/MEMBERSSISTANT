@@ -37,6 +37,9 @@ class AdminProfile(BaseModel):
 
     def __str__(self):
         return f"{self.name} {self.surname} ({self.role})"
+# Ensure these imports are at the top of your models.py
+from django.utils import timezone
+from datetime import timedelta
 
 class LandlordProfile(BaseModel): 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -57,16 +60,35 @@ class LandlordProfile(BaseModel):
     contract_signed = models.BooleanField(default=False)
     contract_url = models.CharField(max_length=500, blank=True, null=True)
     
-    # Encrypted File URLs for secure storage in Firebase
+    # Encrypted File URLs
     face_url = models.CharField(max_length=500, blank=True, null=True)
     id_document_url = models.CharField(max_length=500, blank=True, null=True)
     
+    # Paystack Subaccount
     paystack_merchant_code = models.CharField(max_length=100, blank=True, null=True)
     seller_paystack_account = models.CharField(max_length=100, blank=True, null=True)
+
+    # --- NEW: Subscription & Trial Tracking ---
+    trial_start_date = models.DateTimeField(null=True, blank=True)
+    subscription_valid_until = models.DateTimeField(null=True, blank=True)
+    
+    def save(self, *args, **kwargs):
+        # Intercept the save to check if verification status just changed to True
+        if self.pk:
+            try:
+                old_instance = LandlordProfile.objects.get(pk=self.pk)
+                # If they were just verified, instantly start the 30-day trial
+                if not old_instance.is_verified and self.is_verified:
+                    self.trial_start_date = timezone.now()
+                    self.subscription_valid_until = timezone.now() + timedelta(days=30)
+            except LandlordProfile.DoesNotExist:
+                pass
+        super().save(*args, **kwargs)
     
     @property
     def is_authenticated(self):
         return True
+        
     def __str__(self):
         return f"{self.name or 'New'} {self.surname or 'Landlord'} ({self.email})"
 
