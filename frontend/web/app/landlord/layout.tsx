@@ -266,8 +266,7 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
                     {!isSidebarCollapsed ? (
                         <div className="pt-4 pb-1 px-5"><p className="text-[9px] font-black text-slate-400 tracking-widest uppercase">Emergency & Medical</p></div>
                     ) : (<div className="pt-4 pb-1 w-full flex justify-center"><div className="w-4 h-[1px] bg-blue-100"></div></div>)}
-
-                    <SidebarItem icon={HeartPulse} label="Medical Responders" href="/landlord/medical-responders" isCritical={true} />
+ 
                     <SidebarItem icon={Activity} label="Emergency Logs" href="/landlord/emergency-logs" isCritical={true} />
                     <SidebarItem icon={MapIcon} label="Res Map" href="/landlord/res-buildings-map" />
                     <SidebarItem icon={Users} label="Students" href="/landlord/students" />
