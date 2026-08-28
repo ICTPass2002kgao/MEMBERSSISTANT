@@ -56,7 +56,18 @@ from .serializers import (
     CampusLocationSerializer, StudentMedicalProfileSerializer, EmergencyReportSerializer, VisitorRegisterSerializer,
     MedicalResponderProfileSerializer, VisitorAuditLogSerializer
 )
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
+class IsAuthenticatedOrReadOnly(BasePermission):
+    """
+    Allow unauthenticated users to perform safe (GET, HEAD, OPTIONS) requests.
+    Require authentication for unsafe methods (POST, PUT, PATCH, DELETE).
+    """
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return request.user and request.user.is_authenticated
+    
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024  
@@ -885,15 +896,27 @@ class AccommodationViewSet(BaseSecureViewSet):
     serializer_class = AccommodationSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
-    # NOTE: The previous authentication bypass for GET requests has been removed.
-    # Now all requests (including GET) require Firebase authentication.
-    # Landlords will only see their own accommodations.
+    # Override permission to allow public GET but require auth for other methods
+    permission_classes = [IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
+        user = self.request.user
+
+        # If the user is not authenticated, show only verified accommodations
+        if not user.is_authenticated:
+            return Accommodation.objects.filter(landlord__is_verified=True)
+
         user_role = getattr(self.request, 'user_role', None)
-        if user_role == 'admin': return Accommodation.objects.all()
-        elif user_role == 'landlord': return Accommodation.objects.filter(landlord=self.request.user)
-        return Accommodation.objects.filter(landlord__is_verified=True)
+
+        if user_role == 'admin':
+            return Accommodation.objects.all()
+        elif user_role == 'landlord':
+            # Landlords see only their own accommodations
+            return Accommodation.objects.filter(landlord=user)
+        else:
+            # Students and other authenticated users see verified accommodations
+            return Accommodation.objects.filter(landlord__is_verified=True)
+ 
 
     def _handle_logo_upload(self, instance, request):
         logo_file = request.FILES.get('accommodation_logo')
