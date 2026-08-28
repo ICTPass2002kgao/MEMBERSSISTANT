@@ -883,21 +883,17 @@ class UnitViewSet(BaseSecureViewSet):
 
 class AccommodationViewSet(BaseSecureViewSet):
     serializer_class = AccommodationSerializer
-    parser_classes = [MultiPartParser, FormParser, JSONParser] 
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    # NOTE: The previous authentication bypass for GET requests has been removed.
+    # Now all requests (including GET) require Firebase authentication.
+    # Landlords will only see their own accommodations.
 
     def get_queryset(self):
         user_role = getattr(self.request, 'user_role', None)
         if user_role == 'admin': return Accommodation.objects.all()
         elif user_role == 'landlord': return Accommodation.objects.filter(landlord=self.request.user)
         return Accommodation.objects.filter(landlord__is_verified=True)
-
-    def get_authenticators(self):
-        if self.request and self.request.method == 'GET': return [] 
-        return super().get_authenticators()
-
-    def get_permissions(self):
-        if self.request and self.request.method == 'GET': return [AllowAny()]
-        return super().get_permissions()
 
     def _handle_logo_upload(self, instance, request):
         logo_file = request.FILES.get('accommodation_logo')
