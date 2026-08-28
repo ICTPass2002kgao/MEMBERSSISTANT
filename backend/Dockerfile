@@ -1,4 +1,4 @@
-FROM python:3.13-slim 
+FROM public.ecr.aws/docker/library/python:3.13-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED 1
 
