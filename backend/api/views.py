@@ -45,7 +45,7 @@ from .models import (
     AdminProfile, LandlordProfile, Block, Unit, Accommodation, Notification, Room, StudentProfile, 
     AttendantProfile, Issue, Charge, LeavePermit, RoomInspection, GatePass,
     CampusLocation, StudentMedicalProfile, EmergencyReport, EmergencyAccessLog, VisitorAuditLog, VisitorRegister,
-    MedicalResponderProfile
+    MedicalResponderProfile, AccommodationImage
 )
 
 # Serializers
@@ -875,12 +875,27 @@ class BlockViewSet(BaseSecureViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['accommodation__id']
 
-    def get_queryset(self):
-        user_role = getattr(self.request, 'user_role', None)
-        if user_role == 'admin': return Block.objects.all()
-        elif user_role == 'landlord': return Block.objects.filter(accommodation__landlord=self.request.user)
-        return Block.objects.none()
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [AllowAny()]
+        return super().get_permissions()
 
+    def get_authenticators(self):
+        if self.request.method in SAFE_METHODS:
+            return []
+        return super().get_authenticators()
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            # Only show blocks of verified accommodations
+            return Block.objects.filter(accommodation__landlord__is_verified=True)
+        user_role = getattr(self.request, 'user_role', None)
+        if user_role == 'admin':
+            return Block.objects.all()
+        elif user_role == 'landlord':
+            return Block.objects.filter(accommodation__landlord=user)
+        return Block.objects.filter(accommodation__landlord__is_verified=True)
 class UnitViewSet(BaseSecureViewSet):
     serializer_class = UnitSerializer
     filter_backends = [DjangoFilterBackend]
@@ -892,47 +907,78 @@ class UnitViewSet(BaseSecureViewSet):
         elif user_role == 'landlord': return Unit.objects.filter(block__accommodation__landlord=self.request.user)
         return Unit.objects.none()
 
+    
+from rest_framework.permissions import AllowAny
+from rest_framework.permissions import SAFE_METHODS
+
 class AccommodationViewSet(BaseSecureViewSet):
     serializer_class = AccommodationSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
-    # Override permission to allow public GET but require auth for other methods
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    # Override default permission class to allow public GET
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [AllowAny()]
+        return super().get_permissions()
+
+    # Override authentication to skip token validation for public GET
+    def get_authenticators(self):
+        if self.request.method in SAFE_METHODS:
+            return []  # No authentication for GET requests
+        return super().get_authenticators()
 
     def get_queryset(self):
         user = self.request.user
-
-        # If the user is not authenticated, show only verified accommodations
+        # Public can see only verified accommodations
         if not user.is_authenticated:
             return Accommodation.objects.filter(landlord__is_verified=True)
-
         user_role = getattr(self.request, 'user_role', None)
-
         if user_role == 'admin':
             return Accommodation.objects.all()
         elif user_role == 'landlord':
-            # Landlords see only their own accommodations
             return Accommodation.objects.filter(landlord=user)
         else:
-            # Students and other authenticated users see verified accommodations
             return Accommodation.objects.filter(landlord__is_verified=True)
- 
 
     def _handle_logo_upload(self, instance, request):
         logo_file = request.FILES.get('accommodation_logo')
         if logo_file:
-            if logo_file.size > 5 * 1024 * 1024: raise ValidationError({"error": "Logo image exceeds the 5MB limit."})
+            if logo_file.size > 5 * 1024 * 1024:
+                raise ValidationError({"error": "Logo image exceeds the 5MB limit."})
             try:
                 ext = os.path.splitext(logo_file.name)[1]
                 filename = f"public_logos/acc_{instance.id}_{uuid.uuid4().hex}{ext}"
-                bucket = storage.bucket(); blob = bucket.blob(filename)
+                bucket = storage.bucket()
+                blob = bucket.blob(filename)
                 blob.upload_from_file(logo_file.file, content_type=logo_file.content_type)
                 blob.make_public()
                 instance.accommodation_logo_url = blob.public_url
                 instance.save()
             except Exception as e:
                 logger.error(f"Failed to upload accommodation logo: {e}", exc_info=True)
+    def _handle_image_uploads(self, instance, request):
+        """Upload multiple images for accommodation (unencrypted)."""
+        images = request.FILES.getlist('accommodation_images')
+        if not images:
+            return
+        bucket = storage.bucket()
 
+        for idx, img_file in enumerate(images):
+            if img_file.size > 5 * 1024 * 1024:
+                raise ValidationError({"error": "Each image cannot exceed 5MB."})
+            
+            ext = os.path.splitext(img_file.name)[1] or '.jpg'
+            filename = f"public_accommodation_images/{instance.id}_{uuid.uuid4().hex}{ext}"
+            blob = bucket.blob(filename)
+            blob.upload_from_file(img_file.file, content_type=img_file.content_type)
+            blob.make_public()
+            
+            is_primary = (idx == 0 and not AccommodationImage.objects.filter(accommodation=instance, is_primary=True).exists())
+            AccommodationImage.objects.create(
+                accommodation=instance,
+                image_url=blob.public_url,
+                is_primary=is_primary
+            )
     def perform_create(self, serializer):
         if getattr(self.request, 'user_role', None) != 'landlord':
             raise ValidationError({"error": "You're not permitted. Please log in with the correct role."})
@@ -944,26 +990,37 @@ class AccommodationViewSet(BaseSecureViewSet):
         subaccount_code = None
         
         if bank_code and account_number:
-            paystack_payload = {"business_name": business_name or f"{landlord.name} Properties", "settlement_bank": bank_code, "account_number": account_number, "percentage_charge": 0.0, "primary_contact_email": landlord.email}
+            paystack_payload = {
+                "business_name": business_name or f"{landlord.name} Properties",
+                "settlement_bank": bank_code,
+                "account_number": account_number,
+                "percentage_charge": 0.0,
+                "primary_contact_email": landlord.email
+            }
             headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}", "Content-Type": "application/json"}
             try:
                 paystack_resp = requests.post(getattr(settings, 'PAYSTACK_API_BASE', "https://api.paystack.co") + "/subaccount", json=paystack_payload, headers=headers)
                 paystack_data = paystack_resp.json()
                 if paystack_resp.status_code in [200, 201] and paystack_data.get('status'):
                     subaccount_code = paystack_data['data']['subaccount_code']
-                else: raise ValidationError({"error": f"Payment setup failed: {paystack_data.get('message', 'Invalid bank details.')}"})
+                else:
+                    raise ValidationError({"error": f"Payment setup failed: {paystack_data.get('message', 'Invalid bank details.')}"})
             except Exception as e:
                 logger.error(f"Paystack Error during accommodation creation: {e}", exc_info=True)
-                if isinstance(e, ValidationError): raise e
+                if isinstance(e, ValidationError):
+                    raise e
                 raise ValidationError({"error": "Failed to connect to payment gateway."})
 
         instance = serializer.save(landlord=landlord, seller_paystack_account=subaccount_code)
         self._handle_logo_upload(instance, self.request)
+        self._handle_image_uploads(instance, self.request)
 
     def perform_update(self, serializer):
         instance = serializer.save()
         self._handle_logo_upload(instance, self.request)
-         
+        self._handle_image_uploads(instance, self.request)
+        
+                  
 class RoomViewSet(BaseSecureViewSet):
     serializer_class = RoomSerializer
     filter_backends = [DjangoFilterBackend]

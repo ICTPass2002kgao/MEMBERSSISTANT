@@ -115,6 +115,15 @@ class Accommodation(BaseModel):
     def is_authenticated(self): return True
     def __str__(self): return self.name
     
+class AccommodationImage(BaseModel):
+    """Stores multiple images for an accommodation listing."""
+    accommodation = models.ForeignKey(Accommodation, on_delete=models.CASCADE, related_name='images')
+    image_url = models.URLField(max_length=500)
+    is_primary = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"Image for {self.accommodation.name} (#{self.id})"
+    
 class Block(BaseModel):
     accommodation = models.ForeignKey(Accommodation, on_delete=models.CASCADE, related_name='blocks')
     name = models.CharField(max_length=100) 
@@ -206,7 +215,6 @@ class AttendantProfile(BaseModel):
         ('ATTENDANT', 'Room Attendant'),
         ('GENERAL', 'General Staff'),
     ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False) 
     landlord = models.ForeignKey(LandlordProfile, on_delete=models.CASCADE, related_name='attendants', null=True, blank=True)
     firebase_uid = models.CharField(max_length=128)

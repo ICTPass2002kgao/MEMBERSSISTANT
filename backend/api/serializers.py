@@ -19,6 +19,7 @@ from .models import (
     EmergencyReport,
     EmergencyAccessLog,
     VisitorAuditLog,
+    AccommodationImage,
     VisitorRegister
 ) 
 
@@ -110,7 +111,17 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         if room.block:
             return room.block.accommodation.key_price
         return None
+class AccommodationImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccommodationImage
+        fields = ['id', 'image_url', 'is_primary']
+
+class AccommodationSerializer(serializers.ModelSerializer):
+    images = AccommodationImageSerializer(many=True, read_only=True)
     
+    class Meta:
+        model = Accommodation
+        fields = '__all__'
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
