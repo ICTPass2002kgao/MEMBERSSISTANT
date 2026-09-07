@@ -3,7 +3,7 @@
 /* This single import handles everything in Tailwind v4 */
 
 :root {
-  --background: #040C34;
+  --background: #fefefe;
   --foreground: #f1f5f9;
   --accent-blue: #3b82f6;
 }

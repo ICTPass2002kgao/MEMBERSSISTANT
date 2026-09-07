@@ -34,11 +34,17 @@ export default function AccommodationsPage() {
 
     const handleAccommodationSuccess = (accData: any, isEdit: boolean) => {
         setIsAccModalOpen(false);
-        fetchData();
+        fetchData(); // Always refresh after any save/error
         if (!isEdit && accData && accData.id) {
             setSelectedAccommodation(accData);
             setTimeout(() => setIsMasterBuilderOpen(true), 300);
         }
+    };
+
+    const handleAccommodationError = (error: any) => {
+        setIsAccModalOpen(false);
+        fetchData(); // Refresh to avoid stale data
+        alert(error.message || "An error occurred while saving.");
     };
 
     if (loading) return <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-blue-500" size={40} /></div>;
@@ -56,9 +62,13 @@ export default function AccommodationsPage() {
                     {accommodations.map((acc: any) => (
                         <div key={acc.id} onClick={() => setSelectedAccommodation(acc)} className="bg-white border border-blue-100 rounded-[32px] p-8 shadow-sm hover:shadow-md cursor-pointer transition-all">
                             <div className="flex justify-between items-start mb-6">
-                                <div className="p-4 bg-blue-50 rounded-2xl">
-                                    {acc.accommodation_logo_url ? (
-                                        <img src={acc.accommodation_logo_url} alt="Logo" className="w-7 h-7 object-cover rounded-md" />
+                                <div className="p-4 bg-blue-50 rounded-2xl overflow-hidden">
+                                    {(acc.accommodation_logo_url || (acc.images && acc.images.length > 0)) ? (
+                                        <img 
+                                            src={acc.accommodation_logo_url || acc.images.find((img: any) => img.is_primary)?.image_url || acc.images[0]?.image_url} 
+                                            alt="Property" 
+                                            className="w-7 h-7 object-cover rounded-md" 
+                                        />
                                     ) : (
                                         <Building2 className="text-blue-600" size={28} />
                                     )}
@@ -67,14 +77,26 @@ export default function AccommodationsPage() {
                             </div>
                             <h4 className="font-black text-xl text-blue-950 mb-1">{acc.name}</h4>
                             <p className="text-xs text-slate-400 mb-6">{acc.address}</p>
-                            <div className="flex justify-between text-[10px] font-bold text-blue-600 border-t pt-4">
+                            
+                            {acc.images && acc.images.length > 0 && (
+                                <div className="mt-2 flex gap-1">
+                                    {acc.images.slice(0, 3).map((img: any, idx: number) => (
+                                        <img key={idx} src={img.image_url} alt="Gallery" className="w-6 h-6 rounded object-cover border border-slate-200" />
+                                    ))}
+                                    {acc.images.length > 3 && (
+                                        <span className="text-[10px] text-slate-400 font-bold self-center">+{acc.images.length - 3}</span>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="flex justify-between text-[10px] font-bold text-blue-600 border-t pt-4 mt-4">
                                 <span>{blocks.filter(b => b.accommodation === acc.id).length} BLOCKS</span>
                                 <span>MANAGE &rarr;</span>
                             </div>
                         </div>
                     ))}
                 </div>
-                {isAccModalOpen && <AccommodationModal initialData={editingAcc} onClose={() => setIsAccModalOpen(false)} onSuccess={handleAccommodationSuccess} />}
+                {isAccModalOpen && <AccommodationModal initialData={editingAcc} onClose={() => setIsAccModalOpen(false)} onSuccess={handleAccommodationSuccess} onError={handleAccommodationError} />}
             </div>
         );
     }
@@ -100,6 +122,14 @@ export default function AccommodationsPage() {
                     <button onClick={() => { setEditingAcc(selectedAccommodation); setIsAccModalOpen(true); }} className="p-3 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100"><Settings size={20} /></button>
                 </div>
             </div>
+
+            {selectedAccommodation.images && selectedAccommodation.images.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                    {selectedAccommodation.images.map((img: any) => (
+                        <img key={img.id} src={img.image_url} alt="Property" className="w-full h-32 object-cover rounded-xl border border-slate-200" />
+                    ))}
+                </div>
+            )}
 
             <div className="space-y-6">
                 {blocks.filter(b => b.accommodation === selectedAccommodation.id).length === 0 && (
@@ -145,7 +175,7 @@ export default function AccommodationsPage() {
                 })}
             </div>
 
-            {isAccModalOpen && <AccommodationModal initialData={editingAcc} onClose={() => setIsAccModalOpen(false)} onSuccess={handleAccommodationSuccess} />}
+            {isAccModalOpen && <AccommodationModal initialData={editingAcc} onClose={() => setIsAccModalOpen(false)} onSuccess={handleAccommodationSuccess} onError={handleAccommodationError} />}
             {isMasterBuilderOpen && <MasterBuilderModal accommodation={selectedAccommodation} onClose={() => setIsMasterBuilderOpen(false)} onSuccess={() => { setIsMasterBuilderOpen(false); fetchData(); }} />}
         </div>
     );
@@ -191,7 +221,6 @@ function MasterBuilderModal({ accommodation, onClose, onSuccess }: any) {
 
     // --- HELPER FUNCTIONS ---
     const handleBlockNameChange = (val: string) => {
-        // Auto Capitalize First Letter
         setBaseBlockName(val.charAt(0).toUpperCase() + val.slice(1));
     };
 
@@ -471,7 +500,7 @@ function MasterBuilderModal({ accommodation, onClose, onSuccess }: any) {
                                 <option value="yes">All Rooms are Shared by Default</option>
                             </Select>
                             
-                                <div className="flex items-center gap-4 border-t pt-4">
+                            <div className="flex items-center gap-4 border-t pt-4">
                                 <span className="text-xs font-bold text-slate-500">If shared, beds per room:</span>
                                 <input type="number" className="w-20 px-3 py-1.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500" value={bedsPerSharedRoom} onChange={(e:any) => setBedsPerSharedRoom(parseInt(e.target.value) || 2)} min="2" max="10"/>
                             </div>
@@ -480,7 +509,6 @@ function MasterBuilderModal({ accommodation, onClose, onSuccess }: any) {
                         {baseRooms.length > 0 ? (
                             <div className="space-y-6">
                                 {uniqueFloors.map(floor => {
-                                    // Match rooms specifically for this floor using the floorConfig's pad length logic
                                     const matchingConfig = floorConfigs.find(c => c.floor === floor);
                                     if (!matchingConfig) return null;
                                     const padLength = matchingConfig.start.length;
@@ -597,13 +625,25 @@ function MasterBuilderModal({ accommodation, onClose, onSuccess }: any) {
 }
 
 // ============================================================================
-// STANDARD ACCOMMODATION MODAL
+// STANDARD ACCOMMODATION MODAL - UPDATED FOR MULTIPLE IMAGES AND ERROR HANDLING
 // ============================================================================
-function AccommodationModal({ onClose, onSuccess, initialData }: any) {
+function AccommodationModal({ onClose, onSuccess, initialData, onError }: any) {
     const [formData, setFormData] = useState(initialData || { name: '', address: '', key_price: '', gender_target: 'MIXED' });
     const [logoFile, setLogoFile] = useState<File | null>(null);
+    const [images, setImages] = useState<File[]>([]);
     const [loading, setLoading] = useState(false);
     const isEdit = !!initialData;
+
+    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const newImages = Array.from(e.target.files);
+            setImages(prev => [...prev, ...newImages]);
+        }
+    };
+
+    const removeImage = (index: number) => {
+        setImages(prev => prev.filter((_, i) => i !== index));
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -620,10 +660,23 @@ function AccommodationModal({ onClose, onSuccess, initialData }: any) {
             if (logoFile) {
                 payload.append('accommodation_logo', logoFile);
             }
+            images.forEach((img) => {
+                payload.append('accommodation_images', img);
+            });
 
             const res = await apiFetch(url, { method, body: payload });
             onSuccess(res, isEdit);
-        } catch (err) { alert("Save failed."); } finally { setLoading(false); }
+        } catch (err: any) {
+            console.error("Save failed:", err);
+            // If the error is a 404, show a special message
+            if (err && err.message && err.message.includes('404')) {
+                onError(new Error("This accommodation no longer exists. The list will refresh."));
+            } else {
+                onError(err);
+            }
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -636,9 +689,41 @@ function AccommodationModal({ onClose, onSuccess, initialData }: any) {
                     </div>
                 )}
                 <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">Property Logo Image (Optional)</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">Property Logo (Optional)</label>
                     <input type="file" accept="image/*" onChange={(e) => setLogoFile(e.target.files ? e.target.files[0] : null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" />
                 </div>
+
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">Property Images (Multiple)</label>
+                    <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        onChange={handleImageSelect} 
+                        className="w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+                    />
+                    {images.length > 0 && (
+                        <div className="flex flex-wrap gap-3 mt-3">
+                            {images.map((img, idx) => (
+                                <div key={idx} className="relative group">
+                                    <img 
+                                        src={URL.createObjectURL(img)} 
+                                        alt={`Preview ${idx}`} 
+                                        className="w-20 h-20 object-cover rounded-lg border border-slate-200" 
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={() => removeImage(idx)}
+                                        className="absolute top-0 right-0 bg-rose-500 text-white rounded-full p-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
                 <Input label="Property Name" value={formData.name} onChange={(e:any) => setFormData({...formData, name: e.target.value})} required />
                 <Input label="Physical Address" value={formData.address} onChange={(e:any) => setFormData({...formData, address: e.target.value})} required />
                 <Select label="Gender Designation" value={formData.gender_target} onChange={(e:any) => setFormData({...formData, gender_target: e.target.value})} required>
