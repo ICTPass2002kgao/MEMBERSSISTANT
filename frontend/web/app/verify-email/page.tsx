@@ -2,13 +2,11 @@
 
 import React, { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { 
-    ArrowLeft, 
-    MailCheck, 
-    Loader2, 
-    ShieldCheck
-} from 'lucide-react';
-import { apiFetch } from '../components/api'; // Adjust path based on your structure
+import { ArrowLeft, MailCheck, Loader2, ShieldCheck } from 'lucide-react';
+import { apiFetch, BASE_URL, sendEmail } from '../components/api';
+import { getRegistrationData, clearRegistrationData, getExpectedOtp, setExpectedOtp } from '../../lib/registrationStore';
+
+export const dynamic = 'force-dynamic';
 
 export default function OTPVerificationPage() {
     const router = useRouter();
@@ -24,8 +22,9 @@ export default function OTPVerificationPage() {
 
     const inputRef = useRef<HTMLInputElement[]>([]);
 
+    const registrationData = getRegistrationData();
+
     useEffect(() => {
-        // Auto-focus the first input on mount
         inputRef.current[0]?.focus();
     }, []);
 
@@ -33,20 +32,17 @@ export default function OTPVerificationPage() {
         const { value } = e.target;
         if (error) setError(null);
 
-        // Only allow numbers
         if (!/^[0-9]*$/.test(value)) return;
 
         const newOTP: string[] = [...otp];
         newOTP[index] = value.substring(value.length - 1);
         setOtp(newOTP);
 
-        // Move to next input if value is entered
         if (value && index < 5) {
             setActiveOTPIndex(index + 1);
             inputRef.current[index + 1]?.focus();
         }
 
-        // Auto verify if all 6 digits are filled
         if (value && index === 5 && newOTP.every((val) => val !== "")) {
             handleVerify(newOTP.join(""));
         }
@@ -58,11 +54,9 @@ export default function OTPVerificationPage() {
             const newOTP = [...otp];
             
             if (otp[index]) {
-                // If there's a value in the current box, just clear it
                 newOTP[index] = "";
                 setOtp(newOTP);
             } else if (index > 0) {
-                // If the current box is empty, clear the previous one and move focus back
                 newOTP[index - 1] = "";
                 setOtp(newOTP);
                 setActiveOTPIndex(index - 1);
@@ -83,7 +77,6 @@ export default function OTPVerificationPage() {
         e.preventDefault();
         const pastedData = e.clipboardData.getData("text/plain").trim();
         
-        // Check if pasted data is exactly 6 numbers
         if (/^[0-9]{6}$/.test(pastedData)) {
             const pastedArray = pastedData.split("");
             setOtp(pastedArray);
@@ -93,60 +86,114 @@ export default function OTPVerificationPage() {
         }
     };
 
-    const handleVerify = async (otpCode?: string) => {
-        const codeToVerify = otpCode || otp.join("");
-        if (codeToVerify.length !== 6) {
-            setError("Please enter the complete 6-digit code.");
-            return;
+ const handleVerify = async (otpCode?: string) => {
+    const codeToVerify = otpCode || otp.join("");
+    if (codeToVerify.length !== 6) {
+        setError("Please enter the complete 6-digit code.");
+        return;
+    }
+
+    const expected = getExpectedOtp();
+    if (!expected || codeToVerify !== expected) {
+        setError("Wrong code, please try again.");
+        setOtp(new Array(6).fill(""));
+        setActiveOTPIndex(0);
+        inputRef.current[0]?.focus();
+        return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    if (!registrationData) {
+        setError("Registration data not found. Please go back and start over.");
+        setIsLoading(false);
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('student_number', registrationData.studentNo);
+        formData.append('name', registrationData.name);
+        formData.append('surname', registrationData.surname);
+        formData.append('password', registrationData.password);
+        formData.append('email', registrationData.email);
+        formData.append('id_number', registrationData.idNumber);
+        formData.append('gender', registrationData.gender);
+        formData.append('phone', registrationData.phone);
+        
+        if (registrationData.idDocument) {
+            formData.append('id_document', registrationData.idDocument);
+        }
+        if (registrationData.proofOfRegistration) {
+            formData.append('proof_of_registration', registrationData.proofOfRegistration);
         }
 
-        setIsLoading(true);
-        setError(null);
+        const response = await apiFetch(`/student-self-register/`, {
+            method: 'POST',
+            body: formData,
+        });
 
-        try {
-            // Replace with your actual verification API call
-            /*
-            const response = await apiFetch('/verify-otp/', {
-                method: 'POST',
-                body: JSON.stringify({ email, otp: codeToVerify })
-            });
-            */
-            
-            // Simulating network delay
-            await new Promise(resolve => setTimeout(resolve, 1500));
+        // Log response status for debugging
+        console.log('Response status:', response.status);
 
-            setSuccess(true);
-            setTimeout(() => {
-                // Redirect to login or next onboarding step after success
-                router.push('/login');
-            }, 2000);
-
-        } catch (err: any) {
-            setError(err.message || "Wrong code, please try again.");
-            setOtp(new Array(6).fill(""));
-            setActiveOTPIndex(0);
-            inputRef.current[0]?.focus();
-        } finally {
-            setIsLoading(false);
+        if (!response.ok) {
+            // Attempt to parse JSON error, fallback to text
+            let errorMessage = 'Failed to register student on the server.';
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorMessage;
+            } catch (jsonError) {
+                const textError = await response.text();
+                console.error('Non-JSON error response:', textError);
+                errorMessage = textError || errorMessage;
+            }
+            throw new Error(errorMessage);
         }
-    };
+
+        // Success – no need to parse the body
+        clearRegistrationData();
+        setSuccess(true);
+        setTimeout(() => {
+            router.push('/login');
+        }, 2000);
+
+    } catch (err: any) {
+        console.error('Registration error:', err);
+        setError(err.message || 'An unexpected error occurred.');
+        setOtp(new Array(6).fill(""));
+        setActiveOTPIndex(0);
+        inputRef.current[0]?.focus();
+    } finally {
+        setIsLoading(false);
+    }
+};
 
     const handleResend = async () => {
         setIsResending(true);
         setError(null);
         
         try {
-            // Replace with your actual resend API call
-            /*
-            await apiFetch('/resend-otp/', {
-                method: 'POST',
-                body: JSON.stringify({ email })
-            });
-            */
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            alert("A new code has been sent to your email.");
-            
-            // Clear inputs for the new code
+            // Generate new OTP and update store
+            const newOTP = Math.floor(100000 + Math.random() * 900000).toString();
+            setExpectedOtp(newOTP);
+
+            // Send email again
+            if (registrationData) {
+                await sendEmail(
+                    registrationData.email,
+                    "Verification Code",
+                    `Hello ${registrationData.name} ${registrationData.surname},\n\nYour new 6-digit verification code is: ${newOTP}\n\nThis code expires soon.`
+                );
+            } else {
+                // Fallback to email from query params if registration data not available
+                await sendEmail(
+                    email,
+                    "Verification Code",
+                    `Your new 6-digit verification code is: ${newOTP}\n\nThis code expires soon.`
+                );
+            }
+
             setOtp(new Array(6).fill(""));
             setActiveOTPIndex(0);
             inputRef.current[0]?.focus();
@@ -171,7 +218,7 @@ export default function OTPVerificationPage() {
                     </div>
                     
                     <h2 className="text-3xl font-black tracking-tight mb-3 text-slate-900">Verified!</h2>
-                    <p className="text-slate-500 mb-2 font-medium">Your account has been successfully verified.</p>
+                    <p className="text-slate-500 mb-2 font-medium">Your account has been successfully created and verified.</p>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-4 animate-pulse">Redirecting to login...</p>
                 </div>
             </div>
@@ -180,13 +227,10 @@ export default function OTPVerificationPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 relative overflow-hidden flex items-center justify-center p-6 text-slate-800 font-sans">
-            
-            {/* Global Background Glows */}
             <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-red-600/5 blur-[120px] pointer-events-none z-0"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-red-900/5 blur-[120px] pointer-events-none z-0"></div>
 
-            <div className="z-10 w-full max-w-md animate-in slide-in-from-bottom-8 duration-300"> 
-                {/* Back Button */}
+            <div className="z-10 w-full max-w-md animate-in slide-in-from-bottom-8 duration-300">
                 <button 
                     onClick={() => router.back()} 
                     className="mb-6 flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-red-700 transition-colors uppercase tracking-widest"
@@ -195,7 +239,6 @@ export default function OTPVerificationPage() {
                 </button>
 
                 <div className="p-8 sm:p-12 rounded-[32px] bg-white/80 backdrop-blur-xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.06)] flex flex-col items-center relative overflow-hidden">
-                    
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-800 to-red-500"></div>
 
                     <div className="p-5 rounded-full bg-red-50 border border-red-100 mb-6 shadow-sm">
@@ -212,7 +255,6 @@ export default function OTPVerificationPage() {
                         {email}
                     </p>
 
-                    {/* OTP Input Fields */}
                     <div className="flex justify-between w-full gap-2 mb-8">
                         {otp.map((_, index) => (
                             <input
@@ -247,7 +289,7 @@ export default function OTPVerificationPage() {
                         {isLoading ? (
                             <div className="flex items-center gap-3">
                                 <Loader2 className="animate-spin w-5 h-5 text-white" />
-                                <span>VERIFYING...</span>
+                                <span>VERIFYING & REGISTERING...</span>
                             </div>
                         ) : 'VERIFY ACCOUNT'}
                     </button>

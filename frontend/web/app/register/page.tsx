@@ -1,26 +1,21 @@
 "use client";
 
-import React, { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent } from 'react';
-import { createUserWithEmailAndPassword, deleteUser } from 'firebase/auth';
-import { auth } from '../firebase/config'; // Adjust path based on your structure
-import Link from 'next/link';
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
     UserPlus, 
     Loader2, 
-    CheckCircle2, 
+    CheckCircle, 
     UploadCloud, 
     FileText, 
-    CheckCircle,
-    ShieldCheck,
-    MailCheck,
-    ArrowLeft
+    ShieldCheck
 } from 'lucide-react';
-import { BASE_URL, apiFetch } from '../components/api'; // Adjust path based on your structure
+import Link from 'next/link';
+import { sendEmail } from '../components/api';
+import { setRegistrationData, setExpectedOtp } from '../../lib/registrationStore';
 
 export default function RegisterStudent() {
-    // Multi-step Registration State
-    // 1 = Form, 2 = OTP Verification, 3 = Success
-    const [step, setStep] = useState<number>(1);
+    const router = useRouter();
 
     // Student Details State
     const [studentNo, setStudentNo] = useState<string>('');
@@ -37,19 +32,10 @@ export default function RegisterStudent() {
     const [proofOfRegistration, setProofOfRegistration] = useState<File | null>(null);
     const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
     
-    // OTP State
-    const [otp, setOtp] = useState<string[]>(new Array(6).fill(""));
-    const [expectedOtp, setExpectedOtp] = useState<string>("");
-    const [activeOTPIndex, setActiveOTPIndex] = useState<number>(0);
-    const inputRef = useRef<HTMLInputElement[]>([]);
-
     // Loading & Error States
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
 
-    // ==========================================
-    // STEP 1: HANDLE FORM SUBMISSION & SEND OTP
-    // ==========================================
     const handleInitialSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
         e.preventDefault();
         setError(null);
@@ -63,38 +49,50 @@ export default function RegisterStudent() {
             setError('You must accept the Terms & Conditions and Privacy Policy to register.');
             return;
         }
+
+        // Additional validation: ensure all required text fields are non-empty
+        if (
+            !studentNo.trim() ||
+            !name.trim() ||
+            !surname.trim() ||
+            !phone.trim() ||
+            !email.trim() ||
+            !password.trim()
+        ) {
+            setError('All required fields must be filled in.');
+            return;
+        }
         
         setLoading(true);
 
         try {
             // 1. Generate 6-digit OTP
             const generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
-            setExpectedOtp(generatedOTP);
+            
+            // 2. Send Email
+            await sendEmail(
+                email,
+                "Verification Code",
+                `Hello ${name} ${surname},\n\nYour 6-digit verification code is: ${generatedOTP}\n\nThis code expires soon.`
+            );
 
-            // 2. Send Email API Call
-            // Replace this with your actual email sending endpoint logic
-            /*
-            await apiFetch('/send-email/', {
-                method: 'POST',
-                body: JSON.stringify({
-                    email: email,
-                    subject: "Verification Code",
-                    message: `Hello ${name} ${surname},\n\nYour 6-digit verification code is: ${generatedOTP}\n\nThis code expires soon.`
-                })
+            // 3. Store registration data and expected OTP in shared store
+            setRegistrationData({
+                studentNo,
+                name,
+                surname,
+                idNumber,
+                phone,
+                email,
+                gender,
+                password,
+                idDocument,
+                proofOfRegistration,
+                acceptedTerms,
             });
-            */
-            
-            // Simulating network delay for email sending
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            console.log("Mock OTP Sent:", generatedOTP); // Remove in production
-
-            // 3. Move to OTP Step
-            setStep(2);
-            
-            // Focus first OTP input after render
-            setTimeout(() => {
-                inputRef.current[0]?.focus();
-            }, 100);
+            setExpectedOtp(generatedOTP);
+ 
+            router.push(`/verify-email?email=${encodeURIComponent(email)}`);
 
         } catch (err: any) {
             setError(err.message || 'Failed to send verification email. Please try again.');
@@ -103,246 +101,13 @@ export default function RegisterStudent() {
         }
     };
 
-    // ==========================================
-    // STEP 2: OTP VERIFICATION LOGIC
-    // ==========================================
-    const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>, index: number): void => {
-        const { value } = e.target;
-        if (error) setError(null);
-        if (!/^[0-9]*$/.test(value)) return;
-
-        const newOTP: string[] = [...otp];
-        newOTP[index] = value.substring(value.length - 1);
-        setOtp(newOTP);
-
-        if (value && index < 5) {
-            setActiveOTPIndex(index + 1);
-            inputRef.current[index + 1]?.focus();
-        }
-
-        if (value && index === 5 && newOTP.every((val) => val !== "")) {
-            verifyAndRegister(newOTP.join(""));
-        }
-    };
-
-    const handleOtpKeyDown = (e: KeyboardEvent<HTMLInputElement>, index: number): void => {
-        if (e.key === "Backspace") {
-            e.preventDefault();
-            const newOTP = [...otp];
-            if (otp[index]) {
-                newOTP[index] = "";
-                setOtp(newOTP);
-            } else if (index > 0) {
-                newOTP[index - 1] = "";
-                setOtp(newOTP);
-                setActiveOTPIndex(index - 1);
-                inputRef.current[index - 1]?.focus();
-            }
-        }
-    };
-
-    const verifyAndRegister = async (enteredOtp?: string) => {
-        const codeToVerify = enteredOtp || otp.join("");
-        if (codeToVerify.length !== 6) {
-            setError("Please enter the complete 6-digit code.");
-            return;
-        }
-
-        setLoading(true);
-        setError(null);
-
-        // Verify OTP
-        if (codeToVerify !== expectedOtp) {
-            setError("Wrong code, please try again.");
-            setOtp(new Array(6).fill(""));
-            inputRef.current[0]?.focus();
-            setLoading(false);
-            return;
-        }
-
-        // If OTP is correct, proceed with Firebase & Backend Registration
-        try {
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            const user = userCredential.user;
-
-            try {
-                const formData = new FormData();
-                formData.append('firebase_uid', user.uid);
-                formData.append('student_number', studentNo);
-                formData.append('name', name);
-                formData.append('surname', surname);
-                formData.append('id_number', idNumber);
-                formData.append('gender', gender);
-                formData.append('phone', phone);
-                formData.append('email', email);
-                
-                if (idDocument) formData.append('id_document', idDocument);
-                if (proofOfRegistration) formData.append('proof_of_registration', proofOfRegistration);
-
-                const response = await fetch(`${BASE_URL || 'http://localhost:8000'}/student-self-register/`, {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Failed to register student on the server.');
-                }
-
-                setStep(3); // Success Screen
-                
-            } catch (backendErr: any) {
-                await deleteUser(user);
-                throw new Error(`Registration Sync Failed: ${backendErr.message}`);
-            }
-
-        } catch (err: any) {
-            setError(err.message.replace('Firebase: ', ''));
-            // If creation fails, we keep them on the OTP screen but show the error
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleResendOtp = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const newOTP = Math.floor(100000 + Math.random() * 900000).toString();
-            setExpectedOtp(newOTP);
-            // Replace with your actual email logic
-            await new Promise(resolve => setTimeout(resolve, 1000)); 
-            alert("A new code has been sent to your email.");
-            setOtp(new Array(6).fill(""));
-            inputRef.current[0]?.focus();
-        } catch (err) {
-            setError("Failed to resend code. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // ==========================================
-    // RENDER LOGIC
-    // ==========================================
-
-    if (step === 3) {
-        return (
-            <div className="min-h-screen bg-slate-50 relative flex items-center justify-center p-6 text-slate-800 font-sans">
-                <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-red-600/5 blur-[120px] pointer-events-none"></div>
-                <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-red-900/5 blur-[120px] pointer-events-none"></div>
-
-                <div className="p-10 sm:p-14 rounded-[32px] bg-white/80 backdrop-blur-xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.06)] flex flex-col items-center max-w-md w-full relative overflow-hidden z-10 text-center animate-in zoom-in duration-300">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
-                    
-                    <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-inner border border-emerald-100">
-                        <CheckCircle2 className="w-10 h-10" strokeWidth={2} />
-                    </div>
-                    
-                    <h2 className="text-3xl font-black tracking-tight mb-3 text-slate-900">Registration Complete!</h2>
-                    <p className="text-slate-500 mb-8 font-medium">Your student profile has been successfully created. You can now log in to apply for residences.</p>
-                    
-                    <Link href="/login" className="w-full py-4 rounded-xl bg-gradient-to-r from-red-800 to-red-700 text-white font-black uppercase tracking-wider shadow-lg shadow-red-900/20 hover:from-red-900 hover:to-red-800 transition-all hover:-translate-y-0.5 block">
-                        PROCEED TO LOGIN
-                    </Link>
-                </div>
-            </div>
-        );
-    }
-
-    if (step === 2) {
-        return (
-            <div className="min-h-screen bg-slate-50 relative flex items-center justify-center p-6 text-slate-800 font-sans">
-                <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-red-600/5 blur-[120px] pointer-events-none z-0"></div>
-                <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-red-900/5 blur-[120px] pointer-events-none z-0"></div>
-
-                <div className="z-10 w-full max-w-md"> 
-                    <button 
-                        onClick={() => setStep(1)} 
-                        className="mb-6 flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-red-700 transition-colors uppercase tracking-widest"
-                    >
-                        <ArrowLeft className="w-4 h-4" /> Back to form
-                    </button>
-
-                    <div className="p-8 sm:p-12 rounded-[32px] bg-white/80 backdrop-blur-xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.06)] flex flex-col items-center relative overflow-hidden animate-in slide-in-from-right-8 duration-300">
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-800 to-red-500"></div>
-
-                        <div className="p-5 rounded-full bg-red-50 border border-red-100 mb-6 shadow-sm">
-                            <MailCheck className="w-10 h-10 text-red-700" strokeWidth={1.5} />
-                        </div>
-
-                        <h2 className="text-3xl font-black tracking-tight mb-2 text-center text-slate-900">
-                            Verification
-                        </h2>
-                        <p className="text-slate-500 text-sm font-medium text-center mb-1">
-                            Enter the 6-digit code we sent to:
-                        </p>
-                        <p className="text-red-700 font-bold text-center mb-8">
-                            {email}
-                        </p>
-
-                        <div className="flex justify-between w-full gap-2 mb-8">
-                            {otp.map((_, index) => (
-                                <input
-                                    key={index}
-                                    ref={(el) => { inputRef.current[index] = el!; }}
-                                    type="text"
-                                    inputMode="numeric"
-                                    maxLength={1}
-                                    value={otp[index]}
-                                    onChange={(e) => handleOtpChange(e, index)}
-                                    onKeyDown={(e) => handleOtpKeyDown(e, index)}
-                                    onFocus={(e) => e.target.select()}
-                                    className="w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl font-black text-red-700 bg-white border border-slate-200 rounded-xl outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all shadow-sm selection:bg-red-200"
-                                />
-                            ))}
-                        </div>
-
-                        {error && (
-                            <div className="w-full bg-rose-50 border border-rose-200 text-rose-700 px-5 py-3 rounded-xl mb-6 text-xs font-bold text-center shadow-sm">
-                                {error}
-                            </div>
-                        )}
-
-                        <button
-                            onClick={() => verifyAndRegister()}
-                            disabled={loading || otp.join("").length !== 6}
-                            className="w-full h-14 rounded-xl text-white font-black tracking-[0.15em] text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center bg-gradient-to-r from-red-800 to-red-700 hover:from-red-900 hover:to-red-800 shadow-lg shadow-red-900/20 active:scale-[0.98]"
-                        >
-                            {loading ? (
-                                <div className="flex items-center gap-3">
-                                    <Loader2 className="animate-spin w-5 h-5 text-white" />
-                                    <span>VERIFYING & REGISTERING...</span>
-                                </div>
-                            ) : 'VERIFY ACCOUNT'}
-                        </button>
-
-                        <div className="mt-8 text-center pt-6 border-t border-slate-200/60 w-full flex flex-col items-center gap-2">
-                            <p className="text-xs font-medium text-slate-500">Didn't receive the code?</p>
-                            <button 
-                                onClick={handleResendOtp}
-                                disabled={loading}
-                                className="text-sm font-bold text-red-700 hover:text-red-800 transition-colors disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {loading ? <><Loader2 className="w-3 h-3 animate-spin"/> Sending...</> : 'Resend Code'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // Default Render: Step 1 (Form)
     return (
         <div className="min-h-screen bg-slate-50 relative overflow-hidden flex items-center justify-center p-6 text-slate-800 font-sans py-12">
-            
             <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-red-600/5 blur-[120px] pointer-events-none"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-red-900/5 blur-[120px] pointer-events-none"></div>
 
-            <div className="z-10 w-full max-w-3xl animate-in slide-in-from-left-8 duration-300"> 
+            <div className="z-10 w-full max-w-3xl animate-in slide-in-from-left-8 duration-300">
                 <div className="p-8 sm:p-12 rounded-[32px] bg-white/80 backdrop-blur-xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.06)] flex flex-col relative overflow-hidden">
-                    
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-800 to-red-500"></div>
 
                     <div className="flex flex-col items-center mb-10">
@@ -365,10 +130,8 @@ export default function RegisterStudent() {
                     )}
 
                     <form className="w-full space-y-8" onSubmit={handleInitialSubmit}>
-                        
                         <div className="space-y-6">
                             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest border-b border-slate-200 pb-2">Personal Information</h3>
-                            
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">First Name</label>
@@ -409,7 +172,6 @@ export default function RegisterStudent() {
 
                         <div className="space-y-6">
                             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest border-b border-slate-200 pb-2">Academic & Contact</h3>
-                            
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Student Number</label>
