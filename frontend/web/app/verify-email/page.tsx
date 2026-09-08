@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent } from 'react';
+import React, { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, MailCheck, Loader2, ShieldCheck } from 'lucide-react';
-import { apiFetch, BASE_URL, sendEmail } from '../components/api';
+import { apiFetch, sendEmail } from '../components/api';
 import { getRegistrationData, clearRegistrationData, getExpectedOtp, setExpectedOtp } from '../../lib/registrationStore';
 
 export const dynamic = 'force-dynamic';
 
-export default function OTPVerificationPage() {
+// This is the actual page content that uses useSearchParams
+function OTPVerificationContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const email = searchParams?.get('email') || 'your email address';
@@ -86,99 +87,94 @@ export default function OTPVerificationPage() {
         }
     };
 
- const handleVerify = async (otpCode?: string) => {
-    const codeToVerify = otpCode || otp.join("");
-    if (codeToVerify.length !== 6) {
-        setError("Please enter the complete 6-digit code.");
-        return;
-    }
-
-    const expected = getExpectedOtp();
-    if (!expected || codeToVerify !== expected) {
-        setError("Wrong code, please try again.");
-        setOtp(new Array(6).fill(""));
-        setActiveOTPIndex(0);
-        inputRef.current[0]?.focus();
-        return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    if (!registrationData) {
-        setError("Registration data not found. Please go back and start over.");
-        setIsLoading(false);
-        return;
-    }
-
-    try {
-        const formData = new FormData();
-        formData.append('student_number', registrationData.studentNo);
-        formData.append('name', registrationData.name);
-        formData.append('surname', registrationData.surname);
-        formData.append('password', registrationData.password);
-        formData.append('email', registrationData.email);
-        formData.append('id_number', registrationData.idNumber);
-        formData.append('gender', registrationData.gender);
-        formData.append('phone', registrationData.phone);
-        
-        if (registrationData.idDocument) {
-            formData.append('id_document', registrationData.idDocument);
-        }
-        if (registrationData.proofOfRegistration) {
-            formData.append('proof_of_registration', registrationData.proofOfRegistration);
+    const handleVerify = async (otpCode?: string) => {
+        const codeToVerify = otpCode || otp.join("");
+        if (codeToVerify.length !== 6) {
+            setError("Please enter the complete 6-digit code.");
+            return;
         }
 
-        const response = await apiFetch(`/student-self-register/`, {
-            method: 'POST',
-            body: formData,
-        });
+        const expected = getExpectedOtp();
+        if (!expected || codeToVerify !== expected) {
+            setError("Wrong code, please try again.");
+            setOtp(new Array(6).fill(""));
+            setActiveOTPIndex(0);
+            inputRef.current[0]?.focus();
+            return;
+        }
 
-        // Log response status for debugging
-        console.log('Response status:', response.status);
+        setIsLoading(true);
+        setError(null);
 
-        if (!response.ok) {
-            // Attempt to parse JSON error, fallback to text
-            let errorMessage = 'Failed to register student on the server.';
-            try {
-                const errorData = await response.json();
-                errorMessage = errorData.error || errorMessage;
-            } catch (jsonError) {
-                const textError = await response.text();
-                console.error('Non-JSON error response:', textError);
-                errorMessage = textError || errorMessage;
+        if (!registrationData) {
+            setError("Registration data not found. Please go back and start over.");
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('student_number', registrationData.studentNo);
+            formData.append('name', registrationData.name);
+            formData.append('surname', registrationData.surname);
+            formData.append('password', registrationData.password);
+            formData.append('email', registrationData.email);
+            formData.append('id_number', registrationData.idNumber);
+            formData.append('gender', registrationData.gender);
+            formData.append('phone', registrationData.phone);
+            
+            if (registrationData.idDocument) {
+                formData.append('id_document', registrationData.idDocument);
             }
-            throw new Error(errorMessage);
+            if (registrationData.proofOfRegistration) {
+                formData.append('proof_of_registration', registrationData.proofOfRegistration);
+            }
+
+            const response = await apiFetch(`/student-self-register/`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            console.log('Response status:', response.status);
+
+            if (!response.ok) {
+                let errorMessage = 'Failed to register student on the server.';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (jsonError) {
+                    const textError = await response.text();
+                    console.error('Non-JSON error response:', textError);
+                    errorMessage = textError || errorMessage;
+                }
+                throw new Error(errorMessage);
+            }
+
+            clearRegistrationData();
+            setSuccess(true);
+            setTimeout(() => {
+                router.push('/login');
+            }, 2000);
+
+        } catch (err: any) {
+            console.error('Registration error:', err);
+            setError(err.message || 'An unexpected error occurred.');
+            setOtp(new Array(6).fill(""));
+            setActiveOTPIndex(0);
+            inputRef.current[0]?.focus();
+        } finally {
+            setIsLoading(false);
         }
-
-        // Success – no need to parse the body
-        clearRegistrationData();
-        setSuccess(true);
-        setTimeout(() => {
-            router.push('/login');
-        }, 2000);
-
-    } catch (err: any) {
-        console.error('Registration error:', err);
-        setError(err.message || 'An unexpected error occurred.');
-        setOtp(new Array(6).fill(""));
-        setActiveOTPIndex(0);
-        inputRef.current[0]?.focus();
-    } finally {
-        setIsLoading(false);
-    }
-};
+    };
 
     const handleResend = async () => {
         setIsResending(true);
         setError(null);
         
         try {
-            // Generate new OTP and update store
             const newOTP = Math.floor(100000 + Math.random() * 900000).toString();
             setExpectedOtp(newOTP);
 
-            // Send email again
             if (registrationData) {
                 await sendEmail(
                     registrationData.email,
@@ -186,7 +182,6 @@ export default function OTPVerificationPage() {
                     `Hello ${registrationData.name} ${registrationData.surname},\n\nYour new 6-digit verification code is: ${newOTP}\n\nThis code expires soon.`
                 );
             } else {
-                // Fallback to email from query params if registration data not available
                 await sendEmail(
                     email,
                     "Verification Code",
@@ -307,5 +302,14 @@ export default function OTPVerificationPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+// Default export wraps the content in Suspense
+export default function OTPVerificationPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>}>
+            <OTPVerificationContent />
+        </Suspense>
     );
 }
