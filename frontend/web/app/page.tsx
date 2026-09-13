@@ -23,6 +23,66 @@ import { Spotlight } from './components/ui/spotlight';
 import { auth } from './firebase/config';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 
+// --- PREMIUM SCROLL ANIMATION COMPONENT ---
+const ScrollReveal = ({ 
+    children, 
+    className = "", 
+    delay = 0, 
+    direction = "up" 
+}: { 
+    children: React.ReactNode, 
+    className?: string, 
+    delay?: number,
+    direction?: "up" | "down" | "left" | "right" | "none"
+}) => {
+    const [isVisible, setIsVisible] = useState(false);
+    const domRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        setIsVisible(true);
+                        if (domRef.current) observer.unobserve(domRef.current);
+                    }
+                });
+            },
+            { threshold: 0.15 }
+        );
+
+        const currentRef = domRef.current;
+        if (currentRef) observer.observe(currentRef);
+
+        return () => {
+            if (currentRef) observer.unobserve(currentRef);
+        };
+    }, []);
+
+    const getDirectionClasses = () => {
+        if (isVisible) return "opacity-100 translate-y-0 translate-x-0";
+        switch (direction) {
+            case "up": return "opacity-0 translate-y-12";
+            case "down": return "opacity-0 -translate-y-12";
+            case "left": return "opacity-0 -translate-x-12";
+            case "right": return "opacity-0 translate-x-12";
+            case "none": return "opacity-0";
+            default: return "opacity-0 translate-y-12";
+        }
+    };
+
+    return (
+        <div
+            ref={domRef}
+            className={`transition-all duration-1000 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${getDirectionClasses()} ${className}`}
+            style={{ transitionDelay: `${delay}ms` }}
+        >
+            {children}
+        </div>
+    );
+};
+// ------------------------------------------
+
 interface Accommodation {
     id: string | number;
     name: string;
@@ -75,7 +135,7 @@ const teamMembers: TeamMember[] = [
     {
         id: 'zama',
         name: 'Zama Mnxeba',
-        role: 'Administrations Officer',
+        role: 'Senior Administrations Officer',
         email: 'admin@studentheights.co.za',
         phone: '065 679 4509',
         description: 'Manages core administrative processes, ensuring proper documentation, clear communication, and smooth onboarding for students.',
@@ -122,7 +182,7 @@ export default function HomePage() {
     useEffect(() => {
         let cancelled = false;
         let unsubscribe: (() => void) | undefined;
-        let hasFetched = false; // 🛡️ prevents duplicate fetches
+        let hasFetched = false;
 
         const fetchAccommodations = async () => {
             if (hasFetched) return;
@@ -156,23 +216,19 @@ export default function HomePage() {
             }
         };
 
-        // 🔐 Step 1: Wait for Firebase auth to resolve
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (cancelled) return;
 
-            // 🔐 Step 2: No user? Sign in anonymously ONCE, then let onAuthStateChanged re-fire
             if (!firebaseUser) {
                 try {
                     await signInAnonymously(auth);
                 } catch (err) {
                     console.error("Anonymous sign-in failed:", err);
-                    // Fall through — try fetching anyway
                     fetchAccommodations();
                 }
                 return;
             }
 
-            // 🔐 Step 3: We have a user (anonymous or real) → now safe to fetch
             fetchAccommodations();
         });
 
@@ -180,7 +236,7 @@ export default function HomePage() {
             cancelled = true;
             if (unsubscribe) unsubscribe();
         };
-    }, []); // 👈 empty array — runs once
+    }, []);
 
     const featuredAccommodations = accommodations.slice(0, 3);
 
@@ -217,40 +273,40 @@ export default function HomePage() {
                     fill="#e11d48"
                 />
 
-                <div className="relative z-10 max-w-5xl mx-auto text-center space-y-8 animate-in slide-in-from-bottom-12 fade-in duration-1000 fill-mode-both">
+                <ScrollReveal direction="up" delay={100} className="relative z-10 max-w-5xl mx-auto text-center space-y-8">
                     
                     <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/40 backdrop-blur-xl border border-white/60 text-slate-800 text-xs font-bold uppercase tracking-widest shadow-sm hover:shadow-md transition-all cursor-default">
                         <Sparkles className="w-4 h-4 text-red-600" />
-                        Accommodating you to greater heights
+                        Setting the Standard of Excellence
                     </div>
                     
                     <h1 className="text-6xl md:text-8xl font-black tracking-tighter text-slate-900 leading-[1.1]">
-                        Elevating <span className="text-transparent bg-clip-text bg-gradient-to-br from-red-800 via-red-600 to-rose-500">Student Living.</span>
+                        The Pinnacle of <br className="hidden md:block" /><span className="text-transparent bg-clip-text bg-gradient-to-br from-red-800 via-red-600 to-rose-500">Student Living.</span>
                     </h1>
                     
                     <p className="text-lg md:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed font-medium">
-                        Discover premium, secure, and fully-managed student accommodations. Designed for academic success and unparalleled lifestyle convenience.
+                        Experience an exclusive portfolio of secure, fully-managed student residences. Meticulously engineered for academic triumph and uncompromising lifestyle convenience.
                     </p>
                     
                     <div className="pt-8 flex flex-col sm:flex-row items-center justify-center gap-5">
                         <Link href="/accommodations" className="w-full sm:w-auto px-10 py-4 rounded-2xl bg-gradient-to-r from-red-800 to-red-600 text-white text-sm font-black uppercase tracking-widest hover:from-red-900 hover:to-red-700 transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-3 hover:-translate-y-1 hover:shadow-xl hover:shadow-red-900/30">
-                            Explore Residences
+                            Explore Collection
                             <ArrowRight className="w-4 h-4" />
                         </Link>
                         <Link href="/about" className="w-full sm:w-auto px-10 py-4 rounded-2xl bg-white/40 backdrop-blur-xl border border-white/60 text-slate-800 text-sm font-black uppercase tracking-widest hover:bg-white/60 hover:text-red-700 hover:border-white transition-all shadow-sm flex items-center justify-center hover:-translate-y-1 hover:shadow-md">
-                            Our Story
+                            Our Philosophy
                         </Link>
                     </div>
-                </div>
+                </ScrollReveal>
 
-                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 text-slate-500 animate-bounce cursor-default z-10">
+                <ScrollReveal direction="none" delay={800} className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 text-slate-500 animate-bounce cursor-default z-10">
                     <span className="text-[9px] uppercase tracking-[0.3em] font-bold">Discover</span>
                     <ChevronDown className="w-5 h-5 text-red-600" />
-                </div>
+                </ScrollReveal>
             </AuroraBackground>
 
             {/* ============================================================
-                BENTO-BOX STYLE ABOUT TEASER (with subtle premium glow bg)
+                BENTO-BOX STYLE ABOUT TEASER
             ============================================================ */}
             <section className="relative py-32 px-6 overflow-hidden">
                 <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[900px] h-[900px] bg-red-500/5 rounded-full blur-[140px] pointer-events-none -z-0" />
@@ -259,56 +315,62 @@ export default function HomePage() {
                 <div className="relative max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-20 items-center z-10">
                     
                     <div className="space-y-10">
-                        <div>
+                        <ScrollReveal direction="left">
                             <div className="flex items-center gap-2 mb-4">
                                 <div className="h-[2px] w-8 bg-red-600 rounded-full"></div>
-                                <p className="text-red-700 text-xs font-black uppercase tracking-widest">Why Choose Us</p>
+                                <p className="text-red-700 text-xs font-black uppercase tracking-widest">The Benchmark</p>
                             </div>
                             <h2 className="text-4xl md:text-5xl font-black text-slate-900 leading-tight">
-                                The new standard of <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500">residence management.</span>
+                                The architectural blueprint of <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500">premium management.</span>
                             </h2>
-                        </div>
+                        </ScrollReveal>
 
                         <div className="grid gap-4">
-                            <div className="group p-6 rounded-3xl bg-white/50 backdrop-blur-xl border border-white/60 shadow-sm hover:shadow-[0_8px_30px_rgb(185,28,28,0.08)] hover:bg-white/80 transition-all cursor-default">
-                                <div className="flex items-start gap-5">
-                                    <div className="w-14 h-14 rounded-2xl bg-white shadow-sm text-red-700 flex items-center justify-center shrink-0 group-hover:scale-110 group-hover:bg-red-600 group-hover:text-white transition-all duration-500">
-                                        <HomeIcon className="w-6 h-6" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-lg font-black text-slate-900 mb-1">Premium Accommodation</h4>
-                                        <p className="text-slate-600 text-sm font-medium leading-relaxed">Curated residences that suit all your needs, safety requirements, and lifestyle perfectly.</p>
+                            <ScrollReveal delay={100} direction="up">
+                                <div className="group p-6 rounded-3xl bg-white/50 backdrop-blur-xl border border-white/60 shadow-sm hover:shadow-[0_8px_30px_rgb(185,28,28,0.08)] hover:bg-white/80 transition-all cursor-default">
+                                    <div className="flex items-start gap-5">
+                                        <div className="w-14 h-14 rounded-2xl bg-white shadow-sm text-red-700 flex items-center justify-center shrink-0 group-hover:scale-110 group-hover:bg-red-600 group-hover:text-white transition-all duration-500">
+                                            <HomeIcon className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-lg font-black text-slate-900 mb-1">Bespoke Residences</h4>
+                                            <p className="text-slate-600 text-sm font-medium leading-relaxed">Curated properties meticulously tailored to exceed your security, academic, and lifestyle imperatives.</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            </ScrollReveal>
 
-                            <div className="group p-6 rounded-3xl bg-white/50 backdrop-blur-xl border border-white/60 shadow-sm hover:shadow-[0_8px_30px_rgb(185,28,28,0.08)] hover:bg-white/80 transition-all cursor-default">
-                                <div className="flex items-start gap-5">
-                                    <div className="w-14 h-14 rounded-2xl bg-white shadow-sm text-red-700 flex items-center justify-center shrink-0 group-hover:scale-110 group-hover:bg-red-600 group-hover:text-white transition-all duration-500">
-                                        <ShieldCheck className="w-6 h-6" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-lg font-black text-slate-900 mb-1">Zero Downpayment</h4>
-                                        <p className="text-slate-600 text-sm font-medium leading-relaxed">Strictly no downpayments required for NSFAS funded students. Seamless move-in process.</p>
+                            <ScrollReveal delay={200} direction="up">
+                                <div className="group p-6 rounded-3xl bg-white/50 backdrop-blur-xl border border-white/60 shadow-sm hover:shadow-[0_8px_30px_rgb(185,28,28,0.08)] hover:bg-white/80 transition-all cursor-default">
+                                    <div className="flex items-start gap-5">
+                                        <div className="w-14 h-14 rounded-2xl bg-white shadow-sm text-red-700 flex items-center justify-center shrink-0 group-hover:scale-110 group-hover:bg-red-600 group-hover:text-white transition-all duration-500">
+                                            <ShieldCheck className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-lg font-black text-slate-900 mb-1">Frictionless Onboarding</h4>
+                                            <p className="text-slate-600 text-sm font-medium leading-relaxed">Strictly zero deposits required for NSFAS-funded scholars, ensuring a completely seamless transition.</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            </ScrollReveal>
 
-                            <div className="group p-6 rounded-3xl bg-white/50 backdrop-blur-xl border border-white/60 shadow-sm hover:shadow-[0_8px_30px_rgb(185,28,28,0.08)] hover:bg-white/80 transition-all cursor-default">
-                                <div className="flex items-start gap-5">
-                                    <div className="w-14 h-14 rounded-2xl bg-white shadow-sm text-red-700 flex items-center justify-center shrink-0 group-hover:scale-110 group-hover:bg-red-600 group-hover:text-white transition-all duration-500">
-                                        <Banknote className="w-6 h-6" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-lg font-black text-slate-900 mb-1">Competitive Pricing</h4>
-                                        <p className="text-slate-600 text-sm font-medium leading-relaxed">Find accommodation that perfectly suits your pocket without ever compromising on quality.</p>
+                            <ScrollReveal delay={300} direction="up">
+                                <div className="group p-6 rounded-3xl bg-white/50 backdrop-blur-xl border border-white/60 shadow-sm hover:shadow-[0_8px_30px_rgb(185,28,28,0.08)] hover:bg-white/80 transition-all cursor-default">
+                                    <div className="flex items-start gap-5">
+                                        <div className="w-14 h-14 rounded-2xl bg-white shadow-sm text-red-700 flex items-center justify-center shrink-0 group-hover:scale-110 group-hover:bg-red-600 group-hover:text-white transition-all duration-500">
+                                            <Banknote className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-lg font-black text-slate-900 mb-1">Unrivaled Value</h4>
+                                            <p className="text-slate-600 text-sm font-medium leading-relaxed">Elite accommodation that aligns with your financial parameters without ever compromising on quality.</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            </ScrollReveal>
                         </div>
                     </div>
 
-                    <div className="relative h-full min-h-[500px] lg:min-h-[600px] w-full flex items-center justify-center">
+                    <ScrollReveal delay={200} direction="right" className="relative h-full min-h-[500px] lg:min-h-[600px] w-full flex items-center justify-center">
                         <div className="absolute inset-0 bg-gradient-to-br from-red-100 to-rose-50 rounded-[40px] transform rotate-3 scale-105 opacity-50 border border-white"></div>
                         
                         <div className="relative z-10 h-[90%] w-[90%] rounded-[2.5rem] overflow-hidden shadow-[0_20px_50px_rgb(0,0,0,0.1)] border-4 border-white">
@@ -327,18 +389,18 @@ export default function HomePage() {
                                 <div className="w-12 h-12 rounded-full border-2 border-white bg-red-600 flex items-center justify-center text-white text-[10px] font-black tracking-tighter">+500</div>
                             </div>
                             <div>
-                                <p className="text-xs font-black text-slate-900 uppercase tracking-widest">Happy Students</p>
+                                <p className="text-xs font-black text-slate-900 uppercase tracking-widest">Elite Residents</p>
                                 <div className="flex gap-1 text-yellow-500 mt-1">
                                     <Star className="w-3 h-3 fill-current" /><Star className="w-3 h-3 fill-current" /><Star className="w-3 h-3 fill-current" /><Star className="w-3 h-3 fill-current" /><Star className="w-3 h-3 fill-current" />
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </ScrollReveal>
                 </div>
             </section>
 
             {/* ============================================================
-                FEATURED ACCOMMODATIONS (with subtle grid overlay)
+                FEATURED ACCOMMODATIONS
             ============================================================ */}
             <section className="relative py-20 px-6 overflow-hidden">
                 <div
@@ -350,18 +412,18 @@ export default function HomePage() {
                 />
 
                 <div className="relative max-w-7xl mx-auto z-10">
-                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-16">
+                    <ScrollReveal direction="up" className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-16">
                         <div>
                             <div className="flex items-center gap-2 mb-4">
                                 <div className="h-[2px] w-8 bg-red-600 rounded-full"></div>
-                                <p className="text-red-700 text-xs font-black uppercase tracking-widest">Our Portfolio</p>
+                                <p className="text-red-700 text-xs font-black uppercase tracking-widest">The Collection</p>
                             </div>
-                            <h2 className="text-4xl md:text-5xl font-black text-slate-900 leading-tight">Exclusive Residences</h2>
+                            <h2 className="text-4xl md:text-5xl font-black text-slate-900 leading-tight">Exclusive Properties</h2>
                         </div>
                         <Link href="/accommodations" className="group px-7 py-3.5 rounded-2xl bg-white/60 backdrop-blur-xl border border-white/80 text-slate-900 text-xs font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm flex items-center gap-3">
-                            View Collection <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                            View Portfolio <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                         </Link>
-                    </div>
+                    </ScrollReveal>
 
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center py-32 gap-5">
@@ -369,7 +431,7 @@ export default function HomePage() {
                                 <div className="absolute inset-0 border-4 border-red-200 rounded-full animate-ping opacity-20"></div>
                                 <Loader2 className="w-12 h-12 text-red-600 animate-spin relative z-10" />
                             </div>
-                            <p className="text-slate-500 text-xs font-black tracking-[0.2em] uppercase">Syncing Properties...</p>
+                            <p className="text-slate-500 text-xs font-black tracking-[0.2em] uppercase">Syncing Portfolio...</p>
                         </div>
                     ) : error ? (
                         <div className="w-full bg-white/60 backdrop-blur-xl border border-rose-200 text-rose-700 px-6 py-8 rounded-3xl text-sm font-bold text-center shadow-sm">
@@ -378,7 +440,7 @@ export default function HomePage() {
                     ) : featuredAccommodations.length === 0 ? (
                         <div className="w-full bg-white/40 backdrop-blur-xl border border-dashed border-slate-300 text-slate-500 px-6 py-20 rounded-[32px] text-center font-bold flex flex-col items-center shadow-sm">
                             <MapPin className="w-12 h-12 text-slate-300 mb-4" />
-                            <p className="text-lg">No accommodations available right now.</p>
+                            <p className="text-lg">Portfolio currently being updated.</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -387,55 +449,56 @@ export default function HomePage() {
                                 const imageCount = acc.images?.length || 0;
                                 
                                 return (
-                                    <Link 
-                                        href={`/accommodations-details/${acc.id}`} 
-                                        key={acc.id || index} 
-                                        className="group relative h-[480px] rounded-[2.5rem] overflow-hidden border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_40px_rgba(185,28,28,0.15)] cursor-pointer transition-all duration-500 hover:-translate-y-2 bg-white block"
-                                    >
-                                        <img 
-                                            src={imageUrl}
-                                            alt={acc.name}
-                                            className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
-                                        />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent transition-opacity duration-500 group-hover:opacity-90"></div>
-                                        
-                                        <div className="absolute top-6 right-6 flex gap-2">
-                                            <span className="px-4 py-2 rounded-xl bg-white/80 backdrop-blur-xl border border-white/40 text-slate-900 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-black/10">
-                                                {acc.gender_target || 'MIXED'}
-                                            </span>
-                                            {imageCount > 0 && (
-                                                <span className="px-3 py-2 rounded-xl bg-slate-900/60 backdrop-blur-xl border border-white/20 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-black/10 flex items-center gap-1">
-                                                    <ImageIcon className="w-3 h-3" /> {imageCount}
+                                    <ScrollReveal key={acc.id || index} delay={index * 150} direction="up">
+                                        <Link 
+                                            href={`/accommodations-details/${acc.id}`} 
+                                            className="group relative h-[480px] rounded-[2.5rem] overflow-hidden border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_40px_rgba(185,28,28,0.15)] cursor-pointer transition-all duration-500 hover:-translate-y-2 bg-white block"
+                                        >
+                                            <img 
+                                                src={imageUrl}
+                                                alt={acc.name}
+                                                className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent transition-opacity duration-500 group-hover:opacity-90"></div>
+                                            
+                                            <div className="absolute top-6 right-6 flex gap-2">
+                                                <span className="px-4 py-2 rounded-xl bg-white/80 backdrop-blur-xl border border-white/40 text-slate-900 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-black/10">
+                                                    {acc.gender_target || 'MIXED'}
                                                 </span>
-                                            )}
-                                        </div>
+                                                {imageCount > 0 && (
+                                                    <span className="px-3 py-2 rounded-xl bg-slate-900/60 backdrop-blur-xl border border-white/20 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-black/10 flex items-center gap-1">
+                                                        <ImageIcon className="w-3 h-3" /> {imageCount}
+                                                    </span>
+                                                )}
+                                            </div>
 
-                                        <div className="absolute bottom-4 left-4 right-4 translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
-                                            <div className="p-6 rounded-[2rem] bg-white/20 backdrop-blur-2xl border border-white/30 flex flex-col gap-4 shadow-2xl relative overflow-hidden">
-                                                <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                                
-                                                <div className="relative z-10">
-                                                    <h3 className="text-white text-2xl font-black leading-tight line-clamp-1 mb-2">
-                                                        {acc.name || 'Premium Residence'}
-                                                    </h3>
+                                            <div className="absolute bottom-4 left-4 right-4 translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
+                                                <div className="p-6 rounded-[2rem] bg-white/20 backdrop-blur-2xl border border-white/30 flex flex-col gap-4 shadow-2xl relative overflow-hidden">
+                                                    <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                                     
-                                                    <div className="flex items-start gap-2 text-slate-200 font-medium">
-                                                        <MapPin className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                                                        <p className="text-xs line-clamp-2 leading-relaxed">
-                                                            {acc.address || 'Address unlisted'}
-                                                        </p>
+                                                    <div className="relative z-10">
+                                                        <h3 className="text-white text-2xl font-black leading-tight line-clamp-1 mb-2">
+                                                            {acc.name || 'Premium Residence'}
+                                                        </h3>
+                                                        
+                                                        <div className="flex items-start gap-2 text-slate-200 font-medium">
+                                                            <MapPin className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                                                            <p className="text-xs line-clamp-2 leading-relaxed">
+                                                                {acc.address || 'Address unlisted'}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                </div>
 
-                                                <div className="relative z-10 pt-4 mt-2 border-t border-white/20 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">
-                                                    <span className="text-white text-xs font-bold uppercase tracking-widest">View Property</span>
-                                                    <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center">
-                                                        <ArrowRight className="w-4 h-4 text-white" />
+                                                    <div className="relative z-10 pt-4 mt-2 border-t border-white/20 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">
+                                                        <span className="text-white text-xs font-bold uppercase tracking-widest">View Property</span>
+                                                        <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center">
+                                                            <ArrowRight className="w-4 h-4 text-white" />
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </Link>
+                                        </Link>
+                                    </ScrollReveal>
                                 );
                             })}
                         </div>
@@ -444,75 +507,77 @@ export default function HomePage() {
             </section>
 
             {/* ============================================================
-                MEET OUR TEAM (with soft premium glow)
+                MEET OUR TEAM
             ============================================================ */}
             <section className="relative py-24 px-6 bg-white/40 border-t border-white/60 overflow-hidden">
                 <div className="absolute top-1/2 left-1/4 w-[700px] h-[700px] bg-red-500/5 rounded-full blur-[140px] pointer-events-none" />
                 <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-rose-400/5 rounded-full blur-[120px] pointer-events-none" />
 
                 <div className="relative max-w-7xl mx-auto z-10">
-                    <div className="text-center mb-20 space-y-4">
+                    <ScrollReveal direction="up" className="text-center mb-20 space-y-4">
                         <div className="flex items-center justify-center gap-2 mb-4">
                             <div className="h-[2px] w-8 bg-red-600 rounded-full"></div>
-                            <p className="text-red-700 text-xs font-black uppercase tracking-widest">The Faces Behind</p>
+                            <p className="text-red-700 text-xs font-black uppercase tracking-[0.2em]">The Visionaries</p>
                             <div className="h-[2px] w-8 bg-red-600 rounded-full"></div>
                         </div>
-                        <h2 className="text-4xl md:text-5xl font-black text-slate-900 leading-tight">Meet Our Team</h2>
+                        <h2 className="text-4xl md:text-5xl font-black text-slate-900 leading-tight">Executive Leadership</h2>
                         <p className="text-slate-600 max-w-2xl mx-auto font-medium">
-                            Dedicated professionals working around the clock to accommodate you to greater heights. Click on a team member to view their full profile.
+                            An elite coalition of professionals dedicated to ensuring your residency is meticulously orchestrated. Click to view full executive profiles.
                         </p>
-                    </div>
+                    </ScrollReveal>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                         {teamMembers.map((member, idx) => (
-                            <Link href={`/team/${member.id}`} key={idx} className="block h-full">
-                                <div className="h-full p-6 rounded-[2.5rem] bg-slate-50 border border-slate-100 shadow-sm hover:shadow-[0_20px_40px_rgba(185,28,28,0.08)] flex flex-col group transition-all duration-500 hover:-translate-y-2 animate-in fade-in slide-in-from-bottom-8 fill-mode-both cursor-pointer overflow-hidden">
-                                    
-                                    <div className="w-full h-56 rounded-[2rem] bg-white mb-6 border border-slate-200 flex items-center justify-center overflow-hidden shadow-sm group-hover:border-red-200 transition-all duration-500 relative">
-                                        {member.image ? (
-                                            <img 
-                                                src={member.image} 
-                                                alt={member.name} 
-                                                className="w-full h-full object-cover object-top group-hover:scale-110 transition-transform duration-700" 
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full bg-gradient-to-br from-red-50 to-white flex items-center justify-center text-4xl font-black text-red-700">
-                                                {getInitials(member.name)}
-                                            </div>
-                                        )}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                                    </div>
-                                    
-                                    <div className="flex-1 flex flex-col">
-                                        <h4 className="text-slate-900 text-xl font-black mb-2">{member.name}</h4>
-                                        <span className="inline-block px-3 py-1 rounded-lg bg-red-50 text-red-700 text-[10px] uppercase font-black tracking-widest mb-4 border border-red-100 w-fit">
-                                            {member.role}
-                                        </span>
+                            <ScrollReveal key={idx} delay={idx * 100} direction="up" className="h-full">
+                                <Link href={`/team/${member.id}`} className="block h-full">
+                                    <div className="h-full p-6 rounded-[2.5rem] bg-slate-50 border border-slate-100 shadow-sm hover:shadow-[0_20px_40px_rgba(185,28,28,0.08)] flex flex-col group transition-all duration-500 hover:-translate-y-2 cursor-pointer overflow-hidden">
                                         
-                                        <p className="text-slate-500 text-sm font-medium leading-relaxed mb-4 line-clamp-3">
-                                            {member.description}
-                                        </p>
-                                        
-                                        <div className="mt-auto pt-4 border-t border-slate-200">
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <Briefcase className="w-3 h-3 text-slate-400" />
-                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Key Focus</span>
-                                            </div>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {member.tasks.slice(0, 2).map((task, tIdx) => (
-                                                    <span key={tIdx} className="px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded-md text-[9px] font-bold tracking-tight truncate max-w-full">
-                                                        {task.length > 25 ? task.substring(0, 25) + '...' : task}
-                                                    </span>
-                                                ))}
-                                            </div>
+                                        <div className="w-full h-56 rounded-[2rem] bg-white mb-6 border border-slate-200 flex items-center justify-center overflow-hidden shadow-sm group-hover:border-red-200 transition-all duration-500 relative">
+                                            {member.image ? (
+                                                <img 
+                                                    src={member.image} 
+                                                    alt={member.name} 
+                                                    className="w-full h-full object-cover object-top group-hover:scale-110 transition-transform duration-700" 
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full bg-gradient-to-br from-red-50 to-white flex items-center justify-center text-4xl font-black text-red-700">
+                                                    {getInitials(member.name)}
+                                                </div>
+                                            )}
+                                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                                         </div>
+                                        
+                                        <div className="flex-1 flex flex-col">
+                                            <h4 className="text-slate-900 text-xl font-black mb-2">{member.name}</h4>
+                                            <span className="inline-block px-3 py-1 rounded-lg bg-red-50 text-red-700 text-[10px] uppercase font-black tracking-widest mb-4 border border-red-100 w-fit">
+                                                {member.role}
+                                            </span>
+                                            
+                                            <p className="text-slate-500 text-sm font-medium leading-relaxed mb-4 line-clamp-3">
+                                                {member.description}
+                                            </p>
+                                            
+                                            <div className="mt-auto pt-4 border-t border-slate-200">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <Briefcase className="w-3 h-3 text-slate-400" />
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Key Focus</span>
+                                                </div>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {member.tasks.slice(0, 2).map((task, tIdx) => (
+                                                        <span key={tIdx} className="px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded-md text-[9px] font-bold tracking-tight truncate max-w-full">
+                                                            {task.length > 25 ? task.substring(0, 25) + '...' : task}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
 
-                                        <div className="flex items-center gap-1 text-[10px] font-black text-red-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity duration-300 mt-4 pt-2">
-                                            View Full Profile <ArrowRight className="w-3 h-3" />
+                                            <div className="flex items-center gap-1 text-[10px] font-black text-red-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity duration-300 mt-4 pt-2">
+                                                View Executive Profile <ArrowRight className="w-3 h-3" />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            </Link>
+                                </Link>
+                            </ScrollReveal>
                         ))}
                     </div>
                 </div>

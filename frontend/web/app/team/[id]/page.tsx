@@ -54,17 +54,7 @@ const teamMembers = [
         description: 'Manages core administrative processes, ensuring proper documentation, clear communication, and smooth onboarding for students.',
         tasks: ['Enquiries', 'Lease Submission'],
         image: '/0005d872-50cf-4492-bedb-17e0c45cfd72.JPG'
-    },
-    {
-        id: 'mary',
-        name: 'Mary Sithole',
-        role: 'Legal & Compliance Officer',
-        email: 'legal@studentheights.co.za',
-        phone: '062 843 6095',
-        description: 'Ensures strict adherence to regulations, handles sensitive behavioral cases, and resolves disputes professionally and ethically.',
-        tasks: ['Dispute Resolutions', 'GBV Cases', 'Behavioral issues or complaints (student, caretaker, housekeeper, drivers & stuff)'],
-        image: '/0850eacc-46be-4102-a71c-135784940917.JPG'
-    },
+    }, 
     {
         id: 'phemelo',
         name: 'Phemelo Machidza',
