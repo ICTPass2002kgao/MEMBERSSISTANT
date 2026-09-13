@@ -1032,7 +1032,6 @@ class RoomViewSet(BaseSecureViewSet):
         elif user_role == 'landlord':
             return Room.objects.filter(Q(block__accommodation__landlord=self.request.user) | Q(unit__block__accommodation__landlord=self.request.user)).distinct()
         return Room.objects.none()
-
 class StudentProfileViewSet(BaseSecureViewSet):
     serializer_class = StudentProfileSerializer
     filter_backends = [DjangoFilterBackend]
@@ -1101,15 +1100,27 @@ class StudentProfileViewSet(BaseSecureViewSet):
             return Response({'error': "You're not permitted. Please log in with the correct role."}, status=status.HTTP_403_FORBIDDEN)
 
         doc_type = request.query_params.get('type')
-        if doc_type not in ['id', 'proof']: return Response({'error': 'Invalid document type requested. Use ?type=id or ?type=proof'}, status=status.HTTP_400_BAD_REQUEST)
+        # FIX: Added 'funding' as a valid document type
+        if doc_type not in ['id', 'proof', 'funding']: 
+            return Response({'error': 'Invalid document type requested. Use ?type=id, ?type=proof, or ?type=funding'}, status=status.HTTP_400_BAD_REQUEST)
 
         student = self.get_object()
-        file_url = student.id_document_url if doc_type == 'id' else student.proof_of_registration_url
-        if not file_url: return Response({'error': 'Document does not exist for this applicant.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # FIX: Map the requested type to the correct database field
+        if doc_type == 'id':
+            file_url = student.id_document_url
+        elif doc_type == 'proof':
+            file_url = student.proof_of_registration_url
+        elif doc_type == 'funding':
+            file_url = student.proof_of_funding_url
+            
+        if not file_url: 
+            return Response({'error': 'Document does not exist for this applicant.'}, status=status.HTTP_404_NOT_FOUND)
 
         try:
             resp = requests.get(file_url)
-            if resp.status_code != 200: return Response({'error': 'Failed to retrieve encrypted file from storage.'}, status=status.HTTP_404_NOT_FOUND)
+            if resp.status_code != 200: 
+                return Response({'error': 'Failed to retrieve encrypted file from storage.'}, status=status.HTTP_404_NOT_FOUND)
             
             cipher_suite = Fernet(settings.FERNET_KEY)
             decrypted_data = cipher_suite.decrypt(resp.content)
@@ -1131,9 +1142,16 @@ class StudentProfileViewSet(BaseSecureViewSet):
         student = request.user
         id_document = request.FILES.get('id_document')
         proof_of_registration = request.FILES.get('proof_of_registration')
+        # FIX: Retrieve the proof of funding file
+        proof_of_funding = request.FILES.get('proof_of_funding')
         
-        if id_document and id_document.size > MAX_UPLOAD_SIZE: return Response({"error": "ID Document exceeds 5MB limit."}, status=400)
-        if proof_of_registration and proof_of_registration.size > MAX_UPLOAD_SIZE: return Response({"error": "Proof of registration exceeds 5MB limit."}, status=400)
+        # FIX: Add size validations for the new document
+        if id_document and id_document.size > MAX_UPLOAD_SIZE: 
+            return Response({"error": "ID Document exceeds 5MB limit."}, status=400)
+        if proof_of_registration and proof_of_registration.size > MAX_UPLOAD_SIZE: 
+            return Response({"error": "Proof of registration exceeds 5MB limit."}, status=400)
+        if proof_of_funding and proof_of_funding.size > MAX_UPLOAD_SIZE: 
+            return Response({"error": "Proof of funding exceeds 5MB limit."}, status=400)
         
         cipher_suite = Fernet(settings.FERNET_KEY)
         bucket = storage.bucket()
@@ -1151,13 +1169,19 @@ class StudentProfileViewSet(BaseSecureViewSet):
                 blob = bucket.blob(filename); blob.upload_from_string(encrypted_bytes, content_type='application/octet-stream')
                 blob.make_public(); student.proof_of_registration_url = blob.public_url
 
+            # FIX: Handle the encryption and upload for proof of funding
+            if proof_of_funding:
+                file_bytes = proof_of_funding.read(); encrypted_bytes = cipher_suite.encrypt(file_bytes)
+                ext = os.path.splitext(proof_of_funding.name)[1]; filename = f"secure_docs/FUNDING_{student.student_number}_{uuid.uuid4().hex}{ext}.enc"
+                blob = bucket.blob(filename); blob.upload_from_string(encrypted_bytes, content_type='application/octet-stream')
+                blob.make_public(); student.proof_of_funding_url = blob.public_url
+
             student.save()
             return Response({"message": "Documents securely uploaded and encrypted."}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Document Update Error: {e}", exc_info=True)
             return Response({"error": "Document security management failed."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
+        
 class AttendantProfileViewSet(BaseSecureViewSet):
     serializer_class = AttendantProfileSerializer
     filter_backends = [DjangoFilterBackend]

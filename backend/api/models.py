@@ -172,7 +172,7 @@ class StudentProfile(BaseModel):
     phone = encrypt(models.CharField(max_length=15, null=True, blank=True))
     applied_accommodation = models.ForeignKey('Accommodation', on_delete=models.SET_NULL, null=True, blank=True, related_name='applicants')
     face_url = models.URLField(blank=True, null=True)
-
+    proof_of_funding_url = models.CharField(max_length=500, blank=True, null=True)
     id_document_url = models.CharField(max_length=500, blank=True, null=True)
     proof_of_registration_url = models.CharField(max_length=500, blank=True, null=True)
     
@@ -214,11 +214,17 @@ class AttendantProfile(BaseModel):
         ('SECURITY', 'Security Officer'),
         ('ATTENDANT', 'Room Attendant'),
         ('GENERAL', 'General Staff'),
+        ('GENERAL', 'General Staff'),
+        ('GENERAL', 'General Staff'),
+        ('GENERAL', 'General Staff'),
+        ('GENERAL', 'General Staff'),
     ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False) 
+    accommodation = models.ForeignKey(Accommodation,  on_delete=models.CASCADE,related_name='accomodation_name',null=True, blank=True)
     landlord = models.ForeignKey(LandlordProfile, on_delete=models.CASCADE, related_name='attendants', null=True, blank=True)
     firebase_uid = models.CharField(max_length=128)
     name = models.CharField(max_length=100)
+    description = models.CharField(max_length=500, null=True, blank=True)
     surname = models.CharField(max_length=100)
     fcm_token = models.TextField(blank=True, null=True)
     email = encrypt(models.EmailField())

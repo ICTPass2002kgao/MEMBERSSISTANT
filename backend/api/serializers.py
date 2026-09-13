@@ -111,6 +111,8 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         if room.block:
             return room.block.accommodation.key_price
         return None
+
+
 class AccommodationImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccommodationImage
