@@ -19,7 +19,8 @@ export default function ApplicationsPage() {
     const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
     const [applicantToApprove, setApplicantToApprove] = useState<any | null>(null);
      
-    const [previewInfo, setPreviewInfo] = useState<{id: string, type: 'id' | 'proof', name: string} | null>(null);
+    // FIX: Added 'funding' to the preview type
+    const [previewInfo, setPreviewInfo] = useState<{id: string, type: 'id' | 'proof' | 'funding', name: string} | null>(null);
 
     const fetchData = async () => {
         setLoading(true);
@@ -103,7 +104,8 @@ export default function ApplicationsPage() {
                             ) : filteredApplicants.length === 0 ? (
                                 <tr><td colSpan={5} className="py-24 text-center text-slate-400 font-bold uppercase tracking-widest italic">No pending applications found.</td></tr>
                             ) : filteredApplicants.map((app: any) => {
-                                const hasDocuments = app.id_document_url && app.proof_of_registration_url;
+                                // FIX: Require all 3 documents for full compliance
+                                const hasDocuments = app.id_document_url && app.proof_of_registration_url && app.proof_of_funding_url;
 
                                 return (
                                 <tr key={app.id} className="hover:bg-blue-50/30 transition-all group">
@@ -140,24 +142,35 @@ export default function ApplicationsPage() {
                                     <td className="py-4 px-6 text-right sticky right-0 bg-white group-hover:bg-blue-50/10 transition-all border-l border-blue-50">
                                         <div className="flex items-center justify-end gap-3">
                                             
-                                            {hasDocuments ? (
-                                                <div className="flex flex-col gap-1.5 mr-2">
+                                            <div className="flex flex-col gap-1.5 mr-2">
+                                                {app.id_document_url && (
                                                     <button 
                                                         onClick={() => setPreviewInfo({id: app.id, type: 'id', name: app.name})}
                                                         className="flex items-center justify-center gap-1.5 px-3 py-1 bg-blue-50 hover:bg-blue-600 text-blue-500 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-all shadow-sm shadow-blue-500/10"
                                                     >
                                                         <FileText size={10}/> Preview ID
                                                     </button>
+                                                )}
+                                                {app.proof_of_registration_url && (
                                                     <button 
                                                         onClick={() => setPreviewInfo({id: app.id, type: 'proof', name: app.name})}
                                                         className="flex items-center justify-center gap-1.5 px-3 py-1 bg-purple-50 hover:bg-purple-600 text-purple-500 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-all shadow-sm shadow-purple-500/10"
                                                     >
                                                         <FileText size={10}/> Preview Proof
                                                     </button>
-                                                </div>
-                                            ) : (
-                                                <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mr-2">Awaiting Docs</span>
-                                            )}
+                                                )}
+                                                {app.proof_of_funding_url && (
+                                                    <button 
+                                                        onClick={() => setPreviewInfo({id: app.id, type: 'funding', name: app.name})}
+                                                        className="flex items-center justify-center gap-1.5 px-3 py-1 bg-emerald-50 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-all shadow-sm shadow-emerald-500/10"
+                                                    >
+                                                        <FileText size={10}/> Preview Funding
+                                                    </button>
+                                                )}
+                                                {!app.id_document_url && !app.proof_of_registration_url && !app.proof_of_funding_url && (
+                                                    <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mr-2">Awaiting Docs</span>
+                                                )}
+                                            </div>
 
                                             <div className="h-8 w-px bg-blue-100 mx-1"></div>
 
@@ -210,7 +223,7 @@ export default function ApplicationsPage() {
 }
 
 // --- DOCUMENT PREVIEW MODAL ---
-function DocumentPreviewModal({ info, onClose }: { info: {id: string, type: string, name: string}, onClose: () => void }) {
+function DocumentPreviewModal({ info, onClose }: { info: {id: string, type: 'id' | 'proof' | 'funding', name: string}, onClose: () => void }) {
     const [docData, setDocData] = useState<{document_base64: string, mime_type: string} | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -218,6 +231,8 @@ function DocumentPreviewModal({ info, onClose }: { info: {id: string, type: stri
     useEffect(() => {
         const fetchDecryptedDoc = async () => {
             try {
+                // Assuming the backend accepts 'funding' as the type parameter. 
+                // If it expects 'proof_of_funding', adjust the type string here.
                 const res = await apiFetch(`/students/${info.id}/decrypted-document/?type=${info.type}`);
                 if (res.error) {
                     setError(res.error);
@@ -233,8 +248,14 @@ function DocumentPreviewModal({ info, onClose }: { info: {id: string, type: stri
         fetchDecryptedDoc();
     }, [info]);
 
+    const getTitle = () => {
+        if (info.type === 'id') return 'ID Document';
+        if (info.type === 'proof') return 'Proof of Registration';
+        return 'Proof of Funding';
+    };
+
     return (
-        <ModalWrapper title={`Secure Preview: ${info.name}'s ${info.type === 'id' ? 'ID Document' : 'Proof of Registration'}`} onClose={onClose}>
+        <ModalWrapper title={`Secure Preview: ${info.name}'s ${getTitle()}`} onClose={onClose}>
             <div className="w-full h-[60vh] bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-200 overflow-hidden relative">
                 {loading && <Loader2 className="animate-spin text-blue-500" size={32} />}
                 {error && <div className="text-rose-500 font-bold text-xs uppercase tracking-widest flex items-center gap-2"><AlertCircle size={16}/>{error}</div>}

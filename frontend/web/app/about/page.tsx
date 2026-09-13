@@ -7,22 +7,96 @@ import {
     Home as HomeIcon,
     ArrowRight,
     Sparkles,
-    CheckCircle2
+    CheckCircle2,
+    Briefcase,
+    UserCircle
 } from 'lucide-react';
 import Footer from '../components/Footer';
 import Navbar from '../components/Navbar';
 
 export default function AboutPage() {
+    // FIX: Full profiles integrated directly into the About page
     const teamMembers = [
-        { name: "Lwazi Nene", role: "Founder & CEO", delay: "delay-[100ms]" },
-        { name: "Moeketsi Mofokeng", role: "Founder & COO", delay: "delay-[200ms]" },
-        { name: "Neo Molotsi", role: "Operations Manager", delay: "delay-[300ms]" },
-        { name: "Sam Matloha", role: "Maintenance Officer", delay: "delay-[400ms]" },
-        { name: "Neliswa Miya", role: "Senior Administrator", delay: "delay-[500ms]" },
-        { name: "Phemelo Machidza", role: "Marketing & Stakeholder", delay: "delay-[600ms]" },
-        { name: "Palesa Maleka", role: "Finance Administrator", delay: "delay-[700ms]" },
-        { name: "Mary Sithole", role: "Legal & Compliance", delay: "delay-[800ms]" },
+        {
+            id: 'lwazi',
+            name: 'Lwazi Nene',
+            role: 'CEO',
+            email: 'info@langalesedi.com',
+            description: 'Responsible for the overarching strategic vision, executive leadership, and driving the long-term success and growth of the organization.',
+            tasks: ['Executive Leadership', 'Strategic Planning', 'Company Vision & Direction'],
+            image: '/596d6753-3852-4478-a514-aad2e404029f.JPG',
+            delay: "delay-[100ms]"
+        },
+        {
+            id: 'moeketsi',
+            name: 'Moeketsi Mofokeng',
+            role: 'COO',
+            email: 'info@langalesedi.com',
+            description: 'Manages daily business operations, ensuring organizational efficiency and seamless implementation of company strategies.',
+            tasks: ['Operational Management', 'Process Optimization', 'Resource Allocation'],
+            image: '/596d6753-3852-4478-a514-aad2e404029f.JPG',
+            delay: "delay-[200ms]"
+        },
+        {
+            id: 'neo',
+            name: 'Neo Molotsi',
+            role: 'Operations Manager',
+            email: 'Neo.Molotsi@langalesedi.com',
+            phone: '063 349 8461',
+            description: 'Handles logistics and daily operational concerns to ensure a safe, efficient, and smooth living experience for all residents.',
+            tasks: ["Transport operations (bus schedule, driver's behaviour)", 'Disciplinary hearing appeals'],
+            image: '/b55331a2-b41d-40b8-9fc7-78db3f0dc0f8.JPG',
+            delay: "delay-[300ms]"
+        },
+        {
+            id: 'zama',
+            name: 'Zama Mnxeba',
+            role: 'Senior Administrations Officer',
+            email: 'admin@studentheights.co.za',
+            phone: '065 679 4509',
+            description: 'Manages core administrative processes, ensuring proper documentation, clear communication, and smooth onboarding for students.',
+            tasks: ['Enquiries', 'Lease Submission'],
+            image: '/0005d872-50cf-4492-bedb-17e0c45cfd72.JPG',
+            delay: "delay-[400ms]"
+        }, 
+        {
+            id: 'phemelo',
+            name: 'Phemelo Machidza',
+            role: 'Marketing & Stakeholder Relations',
+            email: 'phemelo.matshidza@studentheights.co.za',
+            phone: '081 009 6956',
+            description: 'Drives brand awareness, coordinates engaging student events, and builds lasting relationships with sponsors and stakeholders.',
+            tasks: ['Events', 'Public Relations (Merchandise & Branding)', 'Sponsorship'],
+            image: '/b445b18e-628b-4ef0-b908-3e3565ebf022.JPG',
+            delay: "delay-[600ms]"
+        },
+        {
+            id: 'nkosana',
+            name: 'Nkosana Macatywe',
+            role: 'Finance Administrator',
+            email: 'Finance@studentheights.co.za',
+            phone: '065 679 4509',
+            description: 'Manages all financial queries, invoicing, account statements, and bursary-related transactions for our students.',
+            tasks: ['Student Account-statement', 'Invoicing', 'Bursary Enquiries'],
+            image: '/e77ebdda-fc0b-46b5-8e1d-0fa40c937768.JPG',
+            delay: "delay-[700ms]"
+        },
+        {
+            id: 'sam',
+            name: 'Sam Motloha',
+            role: 'Maintenance Officer',
+            email: 'sam.matloha@studentheights.co.za',
+            phone: '081 765 7467',
+            description: 'Keeps all residences in top condition by promptly addressing plumbing, electrical, network, and general facility issues.',
+            tasks: ['Maintenance complaints (plumbing, electricity, wi-fi, cleaning)'],
+            image: '/0bad6b0a-4103-4f23-8a37-813b20b3c7e8.JPG',
+            delay: "delay-[800ms]"
+        }
     ];
+
+    const getInitials = (name: string) => {
+        return name.split(' ').map(n => n[0]).join('').substring(0, 2);
+    };
 
     return (
         <div className="w-full bg-blue-50 text-slate-900">
@@ -87,19 +161,60 @@ export default function AboutPage() {
                         <p className="text-slate-500 font-medium max-w-2xl mx-auto text-lg">The dedicated professionals ensuring your stay is secure, comfortable, and managed flawlessly.</p>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                         {teamMembers.map((member, idx) => (
-                            <div key={idx} className={`p-8 rounded-[2.5rem] bg-slate-50 border border-slate-100 shadow-sm hover:shadow-[0_20px_40px_rgba(185,28,28,0.08)] flex flex-col items-center text-center group transition-all duration-500 hover:-translate-y-2 animate-in fade-in slide-in-from-bottom-8 fill-mode-both ${member.delay}`}>
-                                <div className="w-24 h-24 rounded-3xl bg-white mb-6 border border-slate-200 flex items-center justify-center overflow-hidden shadow-sm group-hover:scale-110 group-hover:border-red-200 transition-all duration-500">
-                                    <div className="w-full h-full bg-gradient-to-br from-red-50 to-white flex items-center justify-center text-3xl font-black text-red-700">
-                                        {member.name.charAt(0)}
+                            <Link href={`/team/${member.id}`} key={idx} className={`block h-full ${member.delay}`}>
+                                <div className="h-full p-6 rounded-[2.5rem] bg-slate-50 border border-slate-100 shadow-sm hover:shadow-[0_20px_40px_rgba(185,28,28,0.08)] flex flex-col group transition-all duration-500 hover:-translate-y-2 animate-in fade-in slide-in-from-bottom-8 fill-mode-both cursor-pointer overflow-hidden">
+                                    
+                                    {/* Profile Image */}
+                                    <div className="w-full h-56 rounded-[2rem] bg-white mb-6 border border-slate-200 flex items-center justify-center overflow-hidden shadow-sm group-hover:border-red-200 transition-all duration-500 relative">
+                                        {member.image ? (
+                                            <img 
+                                                src={member.image} 
+                                                alt={member.name} 
+                                                className="w-full h-full object-cover object-top group-hover:scale-110 transition-transform duration-700" 
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full bg-gradient-to-br from-red-50 to-white flex items-center justify-center text-4xl font-black text-red-700">
+                                                {getInitials(member.name)}
+                                            </div>
+                                        )}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                                    </div>
+                                    
+                                    {/* Profile Details */}
+                                    <div className="flex-1 flex flex-col">
+                                        <h4 className="text-slate-900 text-xl font-black mb-2">{member.name}</h4>
+                                        <span className="inline-block px-3 py-1 rounded-lg bg-red-50 text-red-700 text-[10px] uppercase font-black tracking-widest mb-4 border border-red-100 w-fit">
+                                            {member.role}
+                                        </span>
+                                        
+                                        <p className="text-slate-500 text-sm font-medium leading-relaxed mb-4 line-clamp-3">
+                                            {member.description}
+                                        </p>
+                                        
+                                        {/* Core Responsibilities Preview */}
+                                        <div className="mt-auto pt-4 border-t border-slate-200">
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <Briefcase className="w-3 h-3 text-slate-400" />
+                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Key Focus</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {member.tasks.slice(0, 2).map((task, tIdx) => (
+                                                    <span key={tIdx} className="px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded-md text-[9px] font-bold tracking-tight truncate max-w-full">
+                                                        {task.length > 25 ? task.substring(0, 25) + '...' : task}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* View Profile CTA */}
+                                        <div className="flex items-center gap-1 text-[10px] font-black text-red-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity duration-300 mt-4 pt-2">
+                                            View Full Profile <ArrowRight className="w-3 h-3" />
+                                        </div>
                                     </div>
                                 </div>
-                                <h4 className="text-slate-900 text-lg font-black mb-2">{member.name}</h4>
-                                <span className="px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-500 text-[10px] uppercase font-bold tracking-widest shadow-sm">
-                                    {member.role}
-                                </span>
-                            </div>
+                            </Link>
                         ))}
                     </div>
                 </div>

@@ -1,22 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { auth } from '../firebase/config';
 import { getIdToken, onAuthStateChanged, signOut } from 'firebase/auth';
 import { apiFetch, BASE_URL } from './api';
 import { 
-    LogOut, 
-    User,
-    ChevronDown,
-    Loader2,
-    Menu,
-    X,
-    Home,
-    Building2,
-    Info,
-    Headphones
+    LogOut, User, ChevronDown, Loader2, Menu, X,
+    Home, Building2, Info, Headphones
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -28,39 +20,53 @@ export default function Navbar() {
     const [menuOpen, setMenuOpen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [faceImage, setFaceImage] = useState<string | null>(null);
-    const [profileFetched, setProfileFetched] = useState(false); // prevents repeated attempts
+
+    const profileFetchedRef = useRef(false);
+    const lastUidRef = useRef<string | null>(null);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-            if (firebaseUser && !firebaseUser.isAnonymous) {
-                setUser(firebaseUser);
-                if (!profileFetched) {
-                    try {
-                        const token = await getIdToken(firebaseUser, true); // force refresh
-                        const profileData = await fetchUserProfile(token);
-                        if (profileData) {
-                            setProfile(profileData);
-                            if (role === 'student' && profileData?.id) {
-                                fetchFaceImage(profileData.id, token);
-                            }
-                        }
-                    } catch (error) {
-                        console.debug("Profile fetch skipped:", error);
-                    } finally {
-                        setProfileFetched(true);
-                    }
-                }
-            } else {
+            // Anonymous users → treat as logged out
+            if (!firebaseUser || firebaseUser.isAnonymous) {
                 setUser(null);
                 setProfile(null);
+                setRole(null);
                 setFaceImage(null);
-                setProfileFetched(false);
+                profileFetchedRef.current = false;
+                lastUidRef.current = null;
+                setLoading(false);
+                return;
             }
-            setLoading(false);
+
+            setUser(firebaseUser);
+
+            const sameUser = lastUidRef.current === firebaseUser.uid;
+            if (sameUser && profileFetchedRef.current) {
+                setLoading(false);
+                return;
+            }
+
+            lastUidRef.current = firebaseUser.uid;
+            profileFetchedRef.current = true;
+
+            try {
+                const token = await getIdToken(firebaseUser, false); // cached token
+                const profileData = await fetchUserProfile(token);
+                if (profileData) {
+                    setProfile(profileData);
+                    if (profileData.role === 'student' && profileData.id) {
+                        await fetchFaceImage(profileData.id, token);
+                    }
+                }
+            } catch (error) {
+                console.debug("Profile fetch skipped:", error);
+            } finally {
+                setLoading(false);
+            }
         });
 
         return () => unsubscribe();
-    }, [role, profileFetched]);
+    }, []); // 👈 empty array — this is critical
 
     const fetchUserProfile = async (token: string) => {
         const endpoints = [
@@ -83,8 +89,8 @@ export default function Navbar() {
                     setRole(endpoint.role);
                     return res;
                 }
-            } catch (err) {
-                // 403 = wrong role; just continue
+            } catch {
+                // 401/403 on this endpoint → try the next one. No redirect.
                 continue;
             }
         }
@@ -114,6 +120,12 @@ export default function Navbar() {
     const handleLogout = async () => {
         try {
             await signOut(auth);
+            setUser(null);
+            setProfile(null);
+            setRole(null);
+            setFaceImage(null);
+            profileFetchedRef.current = false;
+            lastUidRef.current = null;
             router.push('/');
         } catch (error) {
             console.error("Logout failed:", error);
@@ -121,7 +133,9 @@ export default function Navbar() {
     };
 
     const fullName = profile ? `${profile.name} ${profile.surname}` : '';
-    const initials = profile ? `${profile.name?.charAt(0) || ''}${profile.surname?.charAt(0) || ''}`.toUpperCase() : '';
+    const initials = profile
+        ? `${profile.name?.charAt(0) || ''}${profile.surname?.charAt(0) || ''}`.toUpperCase()
+        : '';
 
     const navLinks = [
         { href: '/', label: 'Home', icon: Home },
@@ -133,7 +147,6 @@ export default function Navbar() {
     return (
         <nav className="fixed top-0 left-0 w-full z-[100] bg-white/80 backdrop-blur-xl border-b border-slate-200/50 shadow-sm">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
-                {/* Logo */}
                 <Link href="/" className="flex items-center gap-2">
                     <img 
                         src="https://res.cloudinary.com/dajihjqkc/image/upload/v1788813673/sh_logo_bpds8p.png" 
@@ -143,7 +156,6 @@ export default function Navbar() {
                     <span className="text-xl font-black text-slate-900 hidden md:block">Student Heights</span>
                 </Link>
 
-                {/* Desktop Navigation */}
                 <div className="hidden md:flex items-center gap-6">
                     {navLinks.map((link) => (
                         <Link 
@@ -157,7 +169,6 @@ export default function Navbar() {
                     ))}
                 </div>
 
-                {/* Auth Section (Desktop) */}
                 <div className="hidden md:flex items-center gap-4">
                     {loading ? (
                         <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
@@ -207,7 +218,6 @@ export default function Navbar() {
                     )}
                 </div>
 
-                {/* Mobile Menu Button */}
                 <button
                     onClick={() => setMobileOpen(!mobileOpen)}
                     className="md:hidden p-2 rounded-xl hover:bg-slate-100 transition"
@@ -216,7 +226,6 @@ export default function Navbar() {
                 </button>
             </div>
 
-            {/* Mobile Menu */}
             {mobileOpen && (
                 <div className="md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-xl animate-in slide-in-from-top-2 fade-in duration-200">
                     <div className="px-6 py-4 space-y-4">

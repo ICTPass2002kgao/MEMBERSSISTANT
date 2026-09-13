@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, FormEvent, useEffect } from 'react';
-import { signInWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
-import { auth } from '../firebase/config'; // Adjust path if needed
+import { signInWithEmailAndPassword, signInAnonymously, signOut, onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebase/config';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldCheck, Loader2, Cookie, X, Lock, User, ArrowRight } from 'lucide-react';
-import { apiFetch } from '../components/api'; // Adjust path if needed
+import { apiFetch } from '../components/api';
 
 interface LoginResponse {
     message?: string;
@@ -15,21 +15,17 @@ interface LoginResponse {
     error?: string;
 }
 
-// Professional-grade cookie helper ensuring Secure and SameSite policies
 const setSecureCookie = (name: string, value: string, days: number = 7) => {
     const expires = new Date(Date.now() + days * 86400000).toUTCString();
     document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; Secure; SameSite=Strict`;
 };
 
 export default function LoginPage() {
-    // Changed from email to identifier to support Student Numbers
     const [identifier, setIdentifier] = useState<string>('');
     const [password, setPassword] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [anonLoading, setAnonLoading] = useState<boolean>(false);
-    
-    // Cookie Banner State
     const [showCookieBanner, setShowCookieBanner] = useState<boolean>(false);
     
     const router = useRouter();
@@ -40,18 +36,24 @@ export default function LoginPage() {
             setShowCookieBanner(true);
         }
     }, []);
-useEffect(() => {
-    const user = auth.currentUser;
-    if (user) {
-        const redirect = sessionStorage.getItem('redirectAfterLogin');
-        if (redirect) {
-            sessionStorage.removeItem('redirectAfterLogin');
-            router.push(redirect);
-        } else {
-            router.push('/');
-        }
-    }
-}, []);
+
+    // 🔐 Redirect ONLY if a real (non-anonymous) user is signed in
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user && !user.isAnonymous) {
+                const redirect = sessionStorage.getItem('redirectAfterLogin');
+                if (redirect) {
+                    sessionStorage.removeItem('redirectAfterLogin');
+                    router.push(redirect);
+                } else {
+                    router.push('/');
+                }
+            }
+        });
+
+        return () => unsubscribe();
+    }, [router]);
+
     const handleAcceptCookies = () => {
         localStorage.setItem('cookie_consent', 'accepted');
         setShowCookieBanner(false);
@@ -69,10 +71,15 @@ useEffect(() => {
 
         try { 
             const trimmedIdentifier = identifier.trim();
-            // Append student email domain if it's just a student number (doesn't contain '@')
             const loginEmail = trimmedIdentifier.includes('@') 
                 ? trimmedIdentifier 
                 : `${trimmedIdentifier}@edu.vut.ac.za`;
+
+            // 🔑 If an anonymous user is active, sign them out first
+            //    (Firebase doesn't allow sign-in with credentials while anonymous user exists)
+            if (auth.currentUser?.isAnonymous) {
+                await signOut(auth);
+            }
 
             const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password);
             const user = userCredential.user;
@@ -84,29 +91,27 @@ useEffect(() => {
                 body: JSON.stringify({ id_token: idToken }), 
             });
 
-            // Set secure cookies for session persistence
+            // 🔑 Also sync token to a cookie so apiFetch can read it
             setSecureCookie('fb_id_token', idToken);
             if (data.role) setSecureCookie('user_role', data.role);
             if (data.user_data) setSecureCookie('user_data', JSON.stringify(data.user_data));
 
-            // Dynamic routing based on the exact roles from your Flutter logic
             const baseRole = data.role;
             const specificRole = data.user_data?.role;
 
             if (baseRole === 'student') {
                 router.push('/accommodations'); 
             } else if (baseRole === 'responder') {
-                router.push('/responder/dashboard'); // Or /responder/verify depending on your web flow
+                router.push('/responder/dashboard');
             } else if (baseRole === 'staff') {
                 if (specificRole === 'SECURITY') {
                     router.push('/security/dashboard');
                 } else {
-                    router.push('/staff/dashboard'); // Attendant dashboard
+                    router.push('/staff/dashboard');
                 }
             } else if (baseRole === 'admin') {
                 router.push('/admin'); 
             } else {
-                // Fallback / Default for Landlords
                 router.push('/landlord/dashboard'); 
             }
             
@@ -126,7 +131,7 @@ useEffect(() => {
         setAnonLoading(true);
         try {
             await signInAnonymously(auth);
-            router.push('/'); // Or '/student/dashboard' for limited access depending on your setup
+            router.push('/');
         } catch (err: any) {
             setError(err.message || 'Anonymous login failed.');
         } finally {
@@ -137,7 +142,6 @@ useEffect(() => {
     return (
         <div className="min-h-screen bg-slate-50 relative overflow-hidden flex items-center justify-center p-6 text-slate-800 font-sans py-12">
             
-            {/* Premium Light Background Atmosphere */}
             <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-red-600/5 blur-[120px] pointer-events-none z-0"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-red-900/5 blur-[120px] pointer-events-none z-0"></div>
 
@@ -242,7 +246,6 @@ useEffect(() => {
                 </div>
             </div>
 
-            {/* Premium Cookie Consent Banner */}
             {showCookieBanner && (
                 <div className="fixed bottom-0 left-0 w-full z-40 p-4 sm:p-6 animate-in slide-in-from-bottom-10 duration-500">
                     <div className="max-w-4xl mx-auto bg-white/95 backdrop-blur-2xl border border-slate-200 rounded-[24px] shadow-[0_-10px_40px_rgb(0,0,0,0.08)] p-6 sm:px-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative overflow-hidden">

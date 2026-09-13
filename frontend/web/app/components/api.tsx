@@ -1,9 +1,5 @@
-
-export const BASE_URL = 'https://memberssistant.up.railway.app/api'; 
-
-// export const BASE_URL = 'http://127.0.0.1:8000/api'; 
- 
-
+// app/components/api.ts
+export const BASE_URL = 'https://memberssistant.up.railway.app/api';
 // export const BASE_URL = 'http://127.0.0.1:8000/api';
 
 const getCookie = (name: string): string | null => {
@@ -17,45 +13,42 @@ const getCookie = (name: string): string | null => {
     return null;
 };
 
-export const apiFetch = async (endpoint: string, options: any = {}) => { 
-  const token = getCookie('fb_id_token');
+export const apiFetch = async (endpoint: string, options: any = {}) => {
+    const token = getCookie('fb_id_token');
 
-  const headers: any = { 
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...options.headers,
-  };
-  
-  if (!(options.body instanceof FormData)) {
-      headers['Content-Type'] = 'application/json';
-  }
-  
-  const response = await fetch(`${BASE_URL}${endpoint}`, { ...options, headers });
-  
-  // Only redirect on auth errors for endpoints that require login
-  if (response.status === 401 || response.status === 403) {
-      const publicEndpoints = ['/accommodations/', '/accommodations', '/student-self-register/', '/login/', '/register/'];
-      const isPublic = publicEndpoints.some(e => endpoint.startsWith(e));
-      if (!isPublic) {
-          console.error(`Auth/Permission Error on ${endpoint}`); 
-          if (typeof window !== 'undefined') {
-              window.location.href = '/';
-          }
-      }
-  }
-  
-  if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || `API Error: ${response.status}`);
-  }
-  
-  return response.json();
+    const headers: any = {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+    };
+
+    if (!(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+    }
+
+    const response = await fetch(`${BASE_URL}${endpoint}`, {
+        ...options,
+        headers,
+    });
+
+    // 🛑 DO NOT REDIRECT HERE. Just throw.
+    // Callers (like Navbar) intentionally probe multiple endpoints and
+    // expect 403s for the ones that don't apply to the current user.
+    if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        const error: any = new Error(errData.error || `API Error: ${response.status}`);
+        error.status = response.status;
+        throw error;
+    }
+
+    return response.json();
 };
+
 export async function sendEmail(receiver: string, title: string, message: string): Promise<boolean> {
-  try {
-    const url = 'https://api-w6yanm6o4q-uc.a.run.app/sendCustomEmail';
-    const currentYear = new Date().getFullYear();
-    const formattedMessage = message.replace(/\n/g, '<br/>');
-    const htmlBody = `
+    try {
+        const url = 'https://api-w6yanm6o4q-uc.a.run.app/sendCustomEmail';
+        const currentYear = new Date().getFullYear();
+        const formattedMessage = message.replace(/\n/g, '<br/>');
+        const htmlBody = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 550px; margin: 0 auto; background-color: #020617; padding: 16px; border-radius: 24px;">
         <div style="background-color: #0f172a; border: 1px solid #1e293b; border-radius: 18px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);">
           <div style="padding: 16px 20px; border-bottom: 1px solid #1e293b; background: linear-gradient(to right, #0f172a, #1e293b); text-align: left;">
@@ -79,20 +72,20 @@ export async function sendEmail(receiver: string, title: string, message: string
       </div>
     `;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: receiver,
-        subject: title,
-        body: htmlBody,
-        attachmentUrl: "",
-      }),
-    });
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to: receiver,
+                subject: title,
+                body: htmlBody,
+                attachmentUrl: "",
+            }),
+        });
 
-    return response.ok;
-  } catch (e) {
-    console.error('Exception sending email:', e);
-    return false;
-  }
+        return response.ok;
+    } catch (e) {
+        console.error('Exception sending email:', e);
+        return false;
+    }
 }

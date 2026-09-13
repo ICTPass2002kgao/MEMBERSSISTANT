@@ -128,7 +128,6 @@ export default function StudentsPage() {
                             className="bg-white border border-blue-100 px-4 py-3 rounded-xl text-[11px] font-bold text-slate-500 outline-none focus:border-blue-400 transition-all min-w-[160px]"
                         >
                             <option value="">All Accommodations</option>
-                            {/* FIX: Appended index to key to ensure uniqueness */}
                             {accommodations.map((a, index) => <option key={`${a.id}-${index}`} value={a.id}>{a.name}</option>)}
                         </select>
 
@@ -139,7 +138,6 @@ export default function StudentsPage() {
                             className="bg-white border border-blue-100 px-4 py-3 rounded-xl text-[11px] font-bold text-slate-500 outline-none focus:border-blue-400 transition-all min-w-[160px] disabled:opacity-50"
                         >
                             <option value="">All Blocks</option>
-                            {/* FIX: Appended index to key to ensure uniqueness */}
                             {blocks.filter(b => b.accommodation === propertyFilter).map((b, index) => (
                                 <option key={`${b.id}-${index}`} value={b.id}>{b.name}</option>
                             ))}
@@ -271,6 +269,12 @@ function StudentModal({ initialData, students, onClose, onSuccess }: any) {
     const isEditMode = !!initialData;
     const [formData, setFormData] = useState<any>(initialData || { gender: 'MALE' });
     const [faceFile, setFaceFile] = useState<File | null>(null);
+    
+    // FIX: Added states for the three required documents
+    const [idFile, setIdFile] = useState<File | null>(null);
+    const [proofFile, setProofFile] = useState<File | null>(null);
+    const [fundingFile, setFundingFile] = useState<File | null>(null);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     
@@ -339,7 +343,7 @@ function StudentModal({ initialData, students, onClose, onSuccess }: any) {
 
         const submitData = new FormData();
         Object.keys(formData).forEach(key => {
-            if (!['room', 'id', 'face_url'].includes(key) && formData[key] !== null) {
+            if (!['room', 'id', 'face_url', 'id_document_url', 'proof_of_registration_url', 'proof_of_funding_url'].includes(key) && formData[key] !== null) {
                 submitData.append(key, formData[key]);
             }
         });
@@ -350,7 +354,13 @@ function StudentModal({ initialData, students, onClose, onSuccess }: any) {
             submitData.append('room_id', formData.room_id); 
         }
 
+        // Append Files
         if (faceFile) submitData.append('face_image', faceFile);
+        
+        // FIX: Append the three new documents
+        if (idFile) submitData.append('id_document', idFile);
+        if (proofFile) submitData.append('proof_of_registration', proofFile);
+        if (fundingFile) submitData.append('proof_of_funding', fundingFile);
 
         try {
             const endpoint = isEditMode ? `/students/${initialData.id}/` : '/add-student/';
@@ -395,26 +405,41 @@ function StudentModal({ initialData, students, onClose, onSuccess }: any) {
                     />
                 </div>
 
+                {/* FIX: Added Required Documents Section */}
+                <div className="p-5 border border-blue-50 rounded-2xl bg-blue-50/10 space-y-3">
+                    <h4 className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Required Documents</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">ID Document</label>
+                            <input type="file" accept="image/*,application/pdf" onChange={(e:any) => setIdFile(e.target.files[0])} className="w-full text-xs text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-600" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Proof of Reg</label>
+                            <input type="file" accept="image/*,application/pdf" onChange={(e:any) => setProofFile(e.target.files[0])} className="w-full text-xs text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-600" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Proof of Funding</label>
+                            <input type="file" accept="image/*,application/pdf" onChange={(e:any) => setFundingFile(e.target.files[0])} className="w-full text-xs text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-600" />
+                        </div>
+                    </div>
+                </div>
+
                 <div className="p-5 border border-blue-50 rounded-2xl bg-blue-50/10 space-y-3">
                     <h4 className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Room Allocation</h4>
                     <Select label="Property" value={selectedAccommodation} onChange={(e:any) => { setSelectedAccommodation(e.target.value); setSelectedBlock(''); setSelectedUnit(''); setFormData({...formData, room_id: ''}); }}>
                         <option value="">-- Choose Property --</option>
-                        {/* FIX: Appended index to key to ensure uniqueness */}
                         {accommodations.map((a, index) => <option key={`acc-${a.id}-${index}`} value={a.id}>{a.name}</option>)}
                     </Select>
                     <Select label="Block" value={selectedBlock} onChange={(e:any) => { setSelectedBlock(e.target.value); setSelectedUnit(''); setFormData({...formData, room_id: ''}); }} disabled={!selectedAccommodation}>
                         <option value="">-- Choose Block --</option>
-                        {/* FIX: Appended index to key to ensure uniqueness */}
                         {blocks.filter(b => b.accommodation === selectedAccommodation).map((b, index) => <option key={`blk-${b.id}-${index}`} value={b.id}>{b.name}</option>)}
                     </Select>
                     <Select label="Unit (Optional)" value={selectedUnit} onChange={(e:any) => { setSelectedUnit(e.target.value); setFormData({...formData, room_id: ''}); }} disabled={!selectedBlock}>
                         <option value="">-- Direct Room --</option>
-                        {/* FIX: Appended index to key to ensure uniqueness */}
                         {units.filter(u => u.block === selectedBlock).map((u, index) => <option key={`unit-${u.id}-${index}`} value={u.id}>{u.name}</option>)}
                     </Select>
                     <Select label="Available Room" value={formData.room_id || formData.room || ''} onChange={(e:any) => setFormData({...formData, room_id: e.target.value})} disabled={!selectedBlock}>
                         <option value="">-- Assign a Room --</option>
-                        {/* FIX: Appended index to key to ensure uniqueness */}
                         {rooms.filter(r => {
                             if (selectedUnit) { if (r.unit !== selectedUnit) return false; } 
                             else { if (r.block !== selectedBlock || r.unit) return false; }

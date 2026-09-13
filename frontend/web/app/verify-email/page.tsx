@@ -304,8 +304,7 @@ function OTPVerificationContent() {
         </div>
     );
 }
-
-// Default export wraps the content in Suspense
+ 
 export default function OTPVerificationPage() {
     return (
         <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>}>

@@ -58,12 +58,10 @@ export default function AccommodationDetailsPage() {
     const [proofFile, setProofFile] = useState<File | null>(null);
     const [applicationSuccess, setApplicationSuccess] = useState<boolean>(false);
 
-    // Carousel state
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [isAutoPlaying, setIsAutoPlaying] = useState(true);
     const autoPlayRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Fetch details (no timeout)
     useEffect(() => {
         if (!id) return;
 
@@ -105,7 +103,6 @@ export default function AccommodationDetailsPage() {
         };
     }, [id]);
 
-    // Auto-advance carousel
     useEffect(() => {
         if (!accommodation || !accommodation.images || accommodation.images.length <= 1) return;
 
@@ -120,12 +117,10 @@ export default function AccommodationDetailsPage() {
         };
     }, [accommodation, isAutoPlaying]);
 
-    // Reset index when accommodation changes
     useEffect(() => {
         setCurrentImageIndex(0);
     }, [accommodation]);
 
-    // Build the list of images to display
     const imageList = accommodation?.images && accommodation.images.length > 0 
         ? accommodation.images.map(img => img.image_url) 
         : accommodation?.accommodation_logo_url 
@@ -140,7 +135,6 @@ export default function AccommodationDetailsPage() {
         setCurrentImageIndex(prev => (prev + 1) % imageList.length);
     };
 
-    // Redirect to login and remember current page
     const redirectToLogin = () => {
         sessionStorage.setItem('redirectAfterLogin', window.location.pathname);
         router.push('/login');
@@ -148,10 +142,9 @@ export default function AccommodationDetailsPage() {
 
     const handleApplyClick = async () => {
         const user = auth.currentUser;
-        if (!user) {
-            setShowLoginPrompt(true);
-            return;
-        }
+
+       
+if (!user || user.isAnonymous) { setShowLoginPrompt(true); return; }
 
         setIsApplying(true);
 
@@ -214,7 +207,8 @@ export default function AccommodationDetailsPage() {
         }
 
         const user = auth.currentUser;
-        if (!user) return;
+        
+if (!user || user.isAnonymous) { setShowLoginPrompt(true); return; }
         
         setIsApplying(true);
         setShowUploadModal(false);
@@ -280,7 +274,6 @@ export default function AccommodationDetailsPage() {
                 </button>
             </nav>
 
-            {/* HERO SECTION WITH CAROUSEL */}
             <section 
                 className="relative w-full h-[60vh] md:h-[70vh] z-10"
                 onMouseEnter={() => setIsAutoPlaying(false)}
@@ -460,7 +453,6 @@ export default function AccommodationDetailsPage() {
                 </div>
             </section>
 
-            {/* Login Prompt Modal */}
             {showLoginPrompt && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white/95 backdrop-blur-2xl p-8 rounded-[32px] border border-white/40 shadow-2xl max-w-sm w-full text-center">
@@ -489,7 +481,6 @@ export default function AccommodationDetailsPage() {
                 </div>
             )}
 
-            {/* Document Upload Modal */}
             {showUploadModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
                     <div className="bg-white/95 backdrop-blur-3xl p-8 md:p-10 rounded-[32px] border border-white/40 shadow-2xl max-w-lg w-full">
@@ -566,7 +557,6 @@ export default function AccommodationDetailsPage() {
                 </div>
             )}
 
-            {/* Success Celebration Modal */}
             {applicationSuccess && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in zoom-in duration-300">
                     <div className="bg-white p-10 rounded-[40px] shadow-2xl max-w-sm w-full text-center relative overflow-hidden">
