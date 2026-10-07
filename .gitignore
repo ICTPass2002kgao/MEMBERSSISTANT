@@ -23,6 +23,11 @@ backend/api/migrations/__pycache__/0019_adminprofile_notification_admin.cpython-
 *.pyc
 *.xcconfig
 frontend/web/node_modules/
+frontend/m_app/ios/build
+frontend/m_app/node_modules/
+
+frontend/m_app/android/app/google-services.json
+
 frontend/web/.next/
 frontend/web/.env.local
 frontend/web/.env.development.local
